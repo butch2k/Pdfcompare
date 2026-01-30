@@ -331,6 +331,8 @@ const llmApiKey = document.getElementById("llm-apikey");
 const llmEndpoint = document.getElementById("llm-endpoint");
 
 let compareResult = null;   // Last comparison response from /api/compare
+let changedPagesA = new Set(); // Pages with diffs in Doc A
+let changedPagesB = new Set(); // Pages with diffs in Doc B
 let aiReportText = null;    // Last AI report text (for export)
 let pdfBytesA = null, pdfBytesB = null;   // Raw PDF bytes cached for pdf.js rendering
 let pdfDocA = null, pdfDocB = null;       // Parsed pdf.js document objects
@@ -578,6 +580,7 @@ function renderResults(data) {
     document.getElementById("tab-unified").innerHTML = `<div class="unified-diff">${esc(data.unified_diff)}</div>`;
     document.getElementById("tab-report").innerHTML = `<div class="report">${renderMarkdown(data.report)}</div>`;
     renderMetadataTab(data);
+    buildChangedPageSets(data);
     renderPdfPreviewTab();
 }
 
@@ -663,6 +666,18 @@ function renderMetadataTab(data) {
     document.getElementById("tab-metadata").innerHTML = html;
 }
 
+// ── Build sets of pages that contain diffs ───────────────────────────────────
+function buildChangedPageSets(data) {
+    changedPagesA = new Set();
+    changedPagesB = new Set();
+    if (!data || !data.diff_blocks) return;
+    for (const block of data.diff_blocks) {
+        if (block.tag === "equal") continue;
+        if (block.left_page) changedPagesA.add(block.left_page);
+        if (block.right_page) changedPagesB.add(block.right_page);
+    }
+}
+
 // ── PDF preview tab ─────────────────────────────────────────────────────────
 function renderPdfPreviewTab() {
     document.getElementById("tab-pdf-preview").innerHTML = `
@@ -715,7 +730,14 @@ async function renderPdfPage(side) {
     const info = document.getElementById(`pdf-${side}-info`);
     if (!doc || !canvas) return;
 
-    info.textContent = `Page ${pageNum} / ${doc.numPages}`;
+    const changedPages = side === "a" ? changedPagesA : changedPagesB;
+    const hasChanges = changedPages.has(pageNum);
+    info.textContent = `Page ${pageNum} / ${doc.numPages}` + (hasChanges ? " \u2022 Changes" : "");
+    const wrap = canvas.closest(".pdf-canvas-wrap");
+    if (wrap) {
+        wrap.style.borderColor = hasChanges ? "var(--yellow)" : "var(--border)";
+        wrap.style.borderWidth = hasChanges ? "3px" : "1px";
+    }
     const page = await doc.getPage(pageNum);
     const viewport = page.getViewport({ scale: 1.5 });
     canvas.width = viewport.width;
@@ -789,6 +811,7 @@ function deleteHistoryEntry(id) {
 function loadFromHistory(entry) {
     compareResult = null;
     aiReportText = null;
+    buildChangedPageSets(entry);
     resultsEl.style.display = "block";
     btnDiff.disabled = true;
     btnReport.disabled = !entry.report;
