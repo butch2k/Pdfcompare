@@ -30,7 +30,27 @@ source venv/bin/activate   # Linux/macOS
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Create your .env file from the example
+cp .env.example .env
+# Edit .env to set your configuration
 ```
+
+## Configuration (.env)
+
+Copy `.env.example` to `.env` and edit it. All settings are optional — the app works with defaults out of the box.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `FLASK_PORT` | `5000` | Port the app listens on |
+| `FLASK_DEBUG` | `false` | Enable Flask debug mode |
+| `MAX_UPLOAD_MB` | `50` | Maximum upload size per file in megabytes |
+| `LLM_PROVIDER` | *(empty)* | Default LLM provider: `ollama`, `openai`, or `gemini` |
+| `LLM_MODEL` | *(empty)* | Default model name (e.g. `llama3`, `gpt-4o`, `gemini-2.0-flash`) |
+| `LLM_API_KEY` | *(empty)* | API key for OpenAI or Gemini (not needed for Ollama) |
+| `LLM_ENDPOINT` | *(empty)* | Custom endpoint URL override |
+
+When `LLM_*` variables are set, they act as server-side defaults. The frontend UI fields override them — users can still change provider/model/key per session without modifying the `.env`.
 
 ## Running the app
 
@@ -43,7 +63,45 @@ Open [http://localhost:5000](http://localhost:5000) in your browser.
 For production use with gunicorn:
 
 ```bash
-gunicorn app:app --bind 0.0.0.0:5000
+gunicorn app:app --bind 0.0.0.0:5000 --workers 4 --timeout 300
+```
+
+## Docker
+
+Build and run with Docker:
+
+```bash
+# Build the image
+docker build -t pdfcompare .
+
+# Run with default settings
+docker run -p 5000:5000 pdfcompare
+
+# Run with environment variables
+docker run -p 5000:5000 \
+  -e LLM_PROVIDER=openai \
+  -e LLM_MODEL=gpt-4o \
+  -e LLM_API_KEY=sk-... \
+  pdfcompare
+
+# Or mount a .env file
+docker run -p 5000:5000 --env-file .env pdfcompare
+```
+
+### Docker Compose
+
+```yaml
+services:
+  pdfcompare:
+    build: .
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+```
+
+```bash
+docker compose up
 ```
 
 ## Usage
@@ -62,18 +120,17 @@ gunicorn app:app --bind 0.0.0.0:5000
 
 ## LLM Configuration
 
-The AI report feature is optional. To enable it, expand the **LLM Configuration** panel before running a comparison and select a provider.
+The AI report feature is optional. Configure it via `.env` (server-side defaults) or via the **LLM Configuration** panel in the UI (per-session overrides).
 
 ### Ollama (local)
 
 Run models locally with [Ollama](https://ollama.com). No API key needed.
 
-| Field    | Value                              |
-|----------|------------------------------------|
-| Provider | Ollama (local)                     |
-| Model    | Any installed model, e.g. `llama3` |
-| API Key  | Leave empty                        |
-| Endpoint | `http://localhost:11434` (default) |
+```env
+LLM_PROVIDER=ollama
+LLM_MODEL=llama3
+LLM_ENDPOINT=http://localhost:11434
+```
 
 Make sure Ollama is running (`ollama serve`) and the model is pulled (`ollama pull llama3`).
 
@@ -81,27 +138,25 @@ Make sure Ollama is running (`ollama serve`) and the model is pulled (`ollama pu
 
 Uses the [OpenAI API](https://platform.openai.com).
 
-| Field    | Value                                           |
-|----------|-------------------------------------------------|
-| Provider | OpenAI (ChatGPT)                                |
-| Model    | `gpt-4o`, `gpt-4o-mini`, `gpt-3.5-turbo`, etc. |
-| API Key  | Your key from platform.openai.com               |
-| Endpoint | Leave empty for default                         |
+```env
+LLM_PROVIDER=openai
+LLM_MODEL=gpt-4o
+LLM_API_KEY=sk-...
+```
 
 ### Google Gemini
 
 Uses the [Gemini API](https://aistudio.google.com).
 
-| Field    | Value                                       |
-|----------|---------------------------------------------|
-| Provider | Google Gemini                               |
-| Model    | `gemini-2.0-flash`, `gemini-1.5-pro`, etc.  |
-| API Key  | Your key from aistudio.google.com           |
-| Endpoint | Leave empty for default                     |
+```env
+LLM_PROVIDER=gemini
+LLM_MODEL=gemini-2.0-flash
+LLM_API_KEY=AI...
+```
 
 ### Custom / self-hosted endpoints
 
-Use the **Endpoint** field to point at any compatible API server. This works for:
+Use `LLM_ENDPOINT` to point at any compatible API server:
 
 - Remote Ollama instances (e.g. `http://my-server:11434`)
 - OpenAI-compatible proxies (e.g. LiteLLM, LocalAI, vLLM with OpenAI-compatible mode)
@@ -112,8 +167,12 @@ Use the **Endpoint** field to point at any compatible API server. This works for
 ```
 Pdfcompare/
 ├── app.py              # Flask backend: PDF extraction, diff, API routes
+├── config.py           # Centralised config from .env
 ├── llm.py              # LLM provider abstraction (Ollama, OpenAI, Gemini)
 ├── requirements.txt    # Python dependencies
+├── .env.example        # Example environment config
+├── Dockerfile          # Container build
+├── .dockerignore       # Docker build exclusions
 └── static/
     └── index.html      # Single-page frontend (HTML + CSS + JS)
 ```

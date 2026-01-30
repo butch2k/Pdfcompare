@@ -6,10 +6,11 @@ from datetime import datetime
 from flask import Flask, request, jsonify, send_from_directory
 import pdfplumber
 
+import config
 from llm import generate_llm_report
 
 app = Flask(__name__, static_folder="static")
-app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB
+app.config["MAX_CONTENT_LENGTH"] = config.MAX_UPLOAD_MB * 1024 * 1024
 
 logger = logging.getLogger(__name__)
 
@@ -221,6 +222,17 @@ def index():
     return send_from_directory("static", "index.html")
 
 
+@app.route("/api/config")
+def get_config():
+    """Expose non-secret server defaults to the frontend."""
+    return jsonify({
+        "llm_provider": config.LLM_PROVIDER,
+        "llm_model": config.LLM_MODEL,
+        "llm_endpoint": config.LLM_ENDPOINT,
+        "has_api_key": bool(config.LLM_API_KEY),
+    })
+
+
 @app.route("/api/compare", methods=["POST"])
 def compare():
     if "pdf_a" not in request.files or "pdf_b" not in request.files:
@@ -271,13 +283,24 @@ def llm_report():
     if missing:
         return jsonify({"error": f"Missing fields: {missing}"}), 400
 
-    provider = data["provider"]
-    config = data.get("config", {})
+    provider = data["provider"] or config.LLM_PROVIDER
+    if not provider:
+        return jsonify({"error": "No LLM provider specified."}), 400
+
+    # Merge: env defaults ← request overrides
+    llm_config = {}
+    if config.LLM_MODEL:
+        llm_config["model"] = config.LLM_MODEL
+    if config.LLM_API_KEY:
+        llm_config["api_key"] = config.LLM_API_KEY
+    if config.LLM_ENDPOINT:
+        llm_config["endpoint"] = config.LLM_ENDPOINT
+    llm_config.update(data.get("config", {}))
 
     try:
         report = generate_llm_report(
             provider=provider,
-            config=config,
+            config=llm_config,
             unified_diff=data["unified_diff"],
             stats=data["stats"],
             name_a=data["name_a"],
@@ -298,4 +321,4 @@ def static_files(path):
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=config.DEBUG, port=config.PORT)

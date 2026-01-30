@@ -257,6 +257,19 @@ const llmEndpoint = document.getElementById("llm-endpoint");
 let compareResult = null;
 let aiReportText = null;
 
+// Load server-side defaults from .env on startup
+(async function loadDefaults() {
+    try {
+        const resp = await fetch("/api/config");
+        if (!resp.ok) return;
+        const cfg = await resp.json();
+        if (cfg.llm_provider && !llmProvider.value) llmProvider.value = cfg.llm_provider;
+        if (cfg.llm_model && !llmModel.value) llmModel.value = cfg.llm_model;
+        if (cfg.llm_endpoint && !llmEndpoint.value) llmEndpoint.value = cfg.llm_endpoint;
+        if (cfg.has_api_key) llmApiKey.placeholder = "Set via server .env";
+    } catch (_) { /* server defaults are optional */ }
+})();
+
 // Set sensible model defaults when provider changes
 llmProvider.addEventListener("change", () => {
     const defaults = { ollama: "llama3", openai: "gpt-4o", gemini: "gemini-2.0-flash" };
