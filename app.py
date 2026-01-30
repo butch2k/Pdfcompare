@@ -690,6 +690,7 @@ def llm_report():
             stats=data["stats"],
             name_a=data["name_a"],
             name_b=data["name_b"],
+            expert_field=data.get("expert_field", ""),
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400

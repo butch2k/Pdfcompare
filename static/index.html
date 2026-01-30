@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PDFCompare</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
     <style>
         :root {
             --bg: #0f172a;
@@ -233,6 +234,24 @@
                 <summary>LLM Configuration</summary>
                 <div class="fields">
                     <label>
+                        Expert Domain
+                        <select id="expert-field" aria-describedby="llm-hint">
+                            <option value="">Auto-detect</option>
+                            <option value="tax law and international taxation">Tax Law &amp; International Taxation</option>
+                            <option value="legal and regulatory compliance">Legal &amp; Regulatory Compliance</option>
+                            <option value="contract law">Contract Law</option>
+                            <option value="finance and accounting">Finance &amp; Accounting</option>
+                            <option value="healthcare and medical sciences">Healthcare &amp; Medical Sciences</option>
+                            <option value="software engineering">Software Engineering</option>
+                            <option value="insurance">Insurance</option>
+                            <option value="intellectual property">Intellectual Property</option>
+                            <option value="human resources">Human Resources</option>
+                            <option value="environmental science and policy">Environmental Science &amp; Policy</option>
+                            <option value="education">Education</option>
+                            <option value="real estate">Real Estate</option>
+                        </select>
+                    </label>
+                    <label>
                         Provider
                         <select id="llm-provider" aria-describedby="llm-hint">
                             <option value="">None (built-in report only)</option>
@@ -330,6 +349,7 @@ const btnAiPdf = document.getElementById("btn-export-ai-pdf");
 const spinner = document.getElementById("spinner");
 const resultsEl = document.getElementById("results");
 
+const expertField = document.getElementById("expert-field");
 const llmProvider = document.getElementById("llm-provider");
 const llmModel = document.getElementById("llm-model");
 const llmApiKey = document.getElementById("llm-apikey");
@@ -558,7 +578,7 @@ async function requestAiReport(data) {
         const resp = await fetch("/api/llm-report", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ provider: llmProvider.value, config: cfg, unified_diff: data.unified_diff, stats: data.stats, name_a: data.name_a, name_b: data.name_b }),
+            body: JSON.stringify({ provider: llmProvider.value, config: cfg, unified_diff: data.unified_diff, stats: data.stats, name_a: data.name_a, name_b: data.name_b, expert_field: expertField.value || "" }),
         });
         const result = await resp.json();
         if (!resp.ok) { aiTab.innerHTML = `<div class="report" role="alert" style="color:var(--red);">LLM Error: ${esc(result.error || "Unknown error")}</div>`; return; }
@@ -937,7 +957,7 @@ btnAiPdf.addEventListener("click", () => {
         image: { type: "jpeg", quality: 0.98 },
         html2canvas: { scale: 2, useCORS: true },
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        pagebreak: { mode: ["avoid-all", "css", "legacy"] }
+        pagebreak: { mode: ["css", "legacy"] }
     };
 
     // Clone content so we can style it for PDF without affecting the page
@@ -947,6 +967,11 @@ btnAiPdf.addEventListener("click", () => {
     clone.style.color = "#222";
     clone.style.fontSize = "12pt";
     clone.style.lineHeight = "1.6";
+    clone.style.maxHeight = "none";
+    clone.style.overflow = "visible";
+    clone.style.height = "auto";
+    clone.style.position = "absolute";
+    clone.style.left = "-9999px";
     document.body.appendChild(clone);
     html2pdf().set(opt).from(clone).save().then(() => clone.remove());
 });

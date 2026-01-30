@@ -41,19 +41,90 @@ _opener = urllib.request.build_opener(_NoRedirectHandler)
 # System prompt sent to every LLM provider
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """\
-You are an expert document analyst. You will receive a unified diff of two PDF documents \
-along with summary statistics. Your task is to produce a detailed Markdown report that:
+_SYSTEM_PROMPT_TEMPLATE = """\
+You are a senior expert in {field}. You will receive a unified diff of two PDF documents \
+along with summary statistics. Focus exclusively on substantive content changes — additions, \
+deletions, and modifications of meaning, provisions, data, or requirements. \
+Ignore formatting, layout, whitespace, numbering, punctuation, and stylistic changes entirely.
 
-1. Summarises the nature and volume of changes.
-2. For each significant change, explain what was added, removed, or modified and \
-   what the likely consequence is for the meaning of the document.
-3. Assess overall severity (Low / Medium / High) and explain why.
-4. Highlight any changes that could alter legal, financial, or contractual obligations.
-5. End with a clear recommendation on whether the changes require further review.
+Produce a thorough, in-depth Markdown report. Begin with a header line:
 
-Be precise, cite line numbers when possible, and use professional language.\
+**Expert analysis by: {field} specialist** ({detection_note})
+
+Then structure the report as follows:
+
+1. **Subject Matter & Context**: Identify what these documents are about and provide \
+   background context that a reader needs to understand the significance of the changes.
+2. **Executive Summary**: A concise overview of the most important substantive changes \
+   and their overall impact.
+3. **Detailed Change Analysis**: For each significant change, provide:
+   - What exactly was added, removed, or modified (quote key phrases).
+   - Why this change matters — explain the intent and rationale where possible.
+   - The practical consequences for stakeholders, operations, or compliance.
+   - Any risks, ambiguities, or gaps introduced by the change.
+4. **Cross-Change Impact**: Analyse how multiple changes interact with each other. \
+   Do they compound risk, create inconsistencies, or strengthen the document?
+5. **Severity Assessment**: Rate overall severity (Low / Medium / High / Critical) \
+   based on how the changes affect obligations, rights, risks, or outcomes in {field}. \
+   Justify the rating with specific references to the changes.
+6. **Regulatory & Legal Implications**: Highlight any changes that could alter legal, \
+   financial, regulatory, or contractual obligations specific to this domain.
+7. **Recommendations**: Provide specific, actionable recommendations — not just whether \
+   to review, but what to review, who should be involved, and what to watch for.
+
+Do NOT report on formatting, whitespace, reordering, renumbering, or cosmetic edits. \
+Only analyse changes that affect the substance or meaning of the document. \
+Be precise, cite page/line numbers when possible, and use professional language. \
+Provide the depth of analysis expected from a seasoned professional in {field}.\
 """
+
+
+def _detect_field(unified_diff: str) -> str:
+    """Detect the professional domain from a sample of the diff content.
+
+    Uses simple keyword matching on the first ~2000 characters to identify the
+    document's field. Falls back to "document analysis" if no field is detected.
+    """
+    sample = unified_diff[:2000].lower()
+
+    field_keywords = [
+        ("tax law and international taxation", ["tax", "globe", "pillar two", "oecd", "beps", "minimum tax", "jurisdict"]),
+        ("legal and regulatory compliance", ["compliance", "regulation", "statute", "legislation", "ordinance", "enact"]),
+        ("contract law", ["contract", "agreement", "clause", "party", "indemnif", "liability", "breach", "termination"]),
+        ("finance and accounting", ["financial", "revenue", "audit", "balance sheet", "fiscal", "gaap", "ifrs"]),
+        ("healthcare and medical sciences", ["patient", "clinical", "diagnosis", "treatment", "medical", "pharma", "dosage"]),
+        ("software engineering", ["api", "endpoint", "function", "database", "deploy", "server", "bug", "release"]),
+        ("insurance", ["policy", "premium", "claim", "underwriting", "coverage", "insured", "deductible"]),
+        ("intellectual property", ["patent", "trademark", "copyright", "infringement", "intellectual property", "licensing"]),
+        ("human resources", ["employee", "compensation", "benefits", "hiring", "termination", "workforce", "payroll"]),
+        ("environmental science and policy", ["emission", "carbon", "climate", "environmental", "pollution", "sustainability"]),
+        ("education", ["curriculum", "student", "assessment", "syllabus", "academic", "grading"]),
+        ("real estate", ["property", "lease", "tenant", "mortgage", "zoning", "escrow"]),
+    ]
+
+    best_field = "document analysis"
+    best_count = 0
+    for field, keywords in field_keywords:
+        count = sum(1 for kw in keywords if kw in sample)
+        if count > best_count:
+            best_count = count
+            best_field = field
+
+    # Require at least 2 keyword hits to claim a specific field
+    if best_count < 2:
+        return "document analysis"
+    return best_field
+
+
+def _build_system_prompt(unified_diff: str, expert_field: str = "") -> str:
+    """Build a system prompt tailored to the document's professional domain."""
+    if expert_field:
+        field = expert_field
+        detection_note = "manually selected"
+    else:
+        field = _detect_field(unified_diff)
+        detection_note = "auto-detected" if field != "document analysis" else "general"
+    return _SYSTEM_PROMPT_TEMPLATE.format(field=field, detection_note=detection_note)
 
 
 # ---------------------------------------------------------------------------
@@ -293,6 +364,7 @@ def generate_llm_report(
     stats: dict,
     name_a: str,
     name_b: str,
+    expert_field: str = "",
 ) -> str:
     """Generate a comparison report using the configured LLM provider.
 
@@ -322,4 +394,5 @@ def generate_llm_report(
     if len(user_prompt) > max_diff_chars:
         user_prompt = user_prompt[:max_diff_chars] + "\n\n[... diff truncated for length ...]\n"
 
-    return call_fn(config, SYSTEM_PROMPT, user_prompt)
+    system_prompt = _build_system_prompt(unified_diff, expert_field)
+    return call_fn(config, system_prompt, user_prompt)
