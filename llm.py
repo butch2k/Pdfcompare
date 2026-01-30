@@ -1,7 +1,7 @@
 """
 LLM provider abstraction for PDF comparison report generation.
 
-Supports three providers — Ollama (local), OpenAI, and Google Gemini — via
+Supports four providers — Ollama (local), LM Studio (local), OpenAI, and Google Gemini — via
 stdlib ``urllib`` so no additional HTTP library is needed.  Each provider
 function builds the appropriate JSON payload, POSTs it, and returns the
 model's Markdown response.
@@ -71,11 +71,14 @@ _BLOCKED_HOSTS = {
 }
 
 
-def _validate_endpoint(url: str) -> None:
+def _validate_endpoint(url: str, *, allow_local: bool = False) -> None:
     """Validate an LLM endpoint URL to block SSRF attempts.
 
     Resolves the hostname to an IP and rejects private/loopback addresses,
     known cloud-metadata endpoints, and ambiguous schemes.
+
+    If *allow_local* is True, loopback and private addresses are permitted
+    (used for providers like Ollama that run on the local machine).
     """
     parsed = urlparse(url)
     if parsed.scheme not in _ALLOWED_SCHEMES:
@@ -95,7 +98,9 @@ def _validate_endpoint(url: str) -> None:
 
     for family, _, _, _, sockaddr in infos:
         ip = ipaddress.ip_address(sockaddr[0])
-        if ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local:
+        if ip.is_reserved or ip.is_link_local:
+            raise ValueError("This endpoint address is not allowed")
+        if not allow_local and (ip.is_private or ip.is_loopback):
             raise ValueError("This endpoint address is not allowed")
 
 
@@ -134,7 +139,7 @@ def _call_ollama(config: dict, system: str, user: str) -> str:
     """
     base = config.get("endpoint", "http://localhost:11434").rstrip("/")
     url = base + "/api/chat"
-    _validate_endpoint(url)
+    _validate_endpoint(url, allow_local=True)
 
     body = json.dumps({
         "model": config.get("model", "llama3"),
@@ -209,11 +214,41 @@ def _call_gemini(config: dict, system: str, user: str) -> str:
     return data["candidates"][0]["content"]["parts"][0]["text"]
 
 
+def _call_lmstudio(config: dict, system: str, user: str) -> str:
+    """Call a local LM Studio server using its OpenAI-compatible API.
+
+    LM Studio does not require an API key.  The endpoint defaults to
+    http://localhost:1234/v1/chat/completions but can be overridden via
+    config["endpoint"].
+    """
+    url = config.get("endpoint", "http://localhost:1234/v1/chat/completions")
+    _validate_endpoint(url, allow_local=True)
+
+    body = json.dumps({
+        "model": config.get("model", "default"),
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    }).encode()
+
+    headers = {"Content-Type": "application/json"}
+    api_key = config.get("api_key", "")
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    req = urllib.request.Request(url, data=body, headers=headers)
+    with _opener.open(req, timeout=300) as resp:
+        data = json.loads(resp.read())
+    return data["choices"][0]["message"]["content"]
+
+
 # Lookup table mapping provider name → call function
 _PROVIDERS = {
     "ollama": _call_ollama,
     "openai": _call_openai,
     "gemini": _call_gemini,
+    "lmstudio": _call_lmstudio,
 }
 
 
@@ -232,7 +267,7 @@ def generate_llm_report(
     """Generate a comparison report using the configured LLM provider.
 
     Args:
-        provider:     One of "ollama", "openai", "gemini".
+        provider:     One of "ollama", "lmstudio", "openai", "gemini".
         config:       Dict with optional keys "api_key", "model", "endpoint".
         unified_diff: The unified diff text to analyse.
         stats:        Dict with equal/insert/delete/replace counts.
