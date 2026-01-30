@@ -1014,10 +1014,11 @@ btnAiPdf.addEventListener("click", () => {
     // Post-process HTML for PDF: wrap paragraphs in divs for page-break avoidance
     let reportHtml = reportContent.innerHTML;
     // Protect <ul>/<ol> blocks from being split by br replacement:
-    // temporarily replace them with placeholders
+    // First clean <br> tags inside lists (between <li> elements), then placeholder them
     const listBlocks = [];
     reportHtml = reportHtml.replace(/<(ul|ol)\b[^>]*>[\s\S]*?<\/\1>/gi, (m) => {
-        listBlocks.push(m);
+        const cleaned = m.replace(/<br\s*\/?>/gi, '');
+        listBlocks.push(cleaned);
         return `<!--LIST${listBlocks.length - 1}-->`;
     });
     // Split on double <br> (paragraph breaks) into text-block divs
