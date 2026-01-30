@@ -67,6 +67,8 @@ def rate_limit(max_requests, window_seconds):
             key = f.__name__ + ":" + (request.remote_addr or "unknown")
             now = time.time()
             _rate_limits[key] = [t for t in _rate_limits[key] if now - t < window_seconds]
+            if not _rate_limits[key]:
+                del _rate_limits[key]
             if len(_rate_limits[key]) >= max_requests:
                 return jsonify({"error": "Rate limit exceeded. Please wait and try again."}), 429
             _rate_limits[key].append(now)
@@ -185,7 +187,7 @@ def apply_ignore_rules(lines: list[str], ignore_options: dict) -> list[str]:
                             match_result[0] = re.fullmatch(pattern, line, flags=0)
                         except re.error:
                             pass
-                    t = threading.Thread(target=_do_match)
+                    t = threading.Thread(target=_do_match, daemon=True)
                     t.start()
                     t.join(timeout=2)
                     if t.is_alive():
@@ -537,7 +539,7 @@ def _safe_filename(file_storage) -> str:
     if not name:
         return "unnamed.pdf"
     name = secure_filename(name)
-    if not name:
+    if not name or not name.lower().endswith(".pdf"):
         return "unnamed.pdf"
     return name
 
