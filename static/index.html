@@ -607,7 +607,7 @@ async function requestAiReport(data) {
             body: JSON.stringify({ provider: llmProvider.value, config: cfg, unified_diff: data.unified_diff, stats: data.stats, name_a: data.name_a, name_b: data.name_b, expert_field: expertField.value || "" }),
         });
         const result = await resp.json();
-        if (!resp.ok) { aiTab.innerHTML = `<div class="report" role="alert" style="color:var(--red);">LLM Error: ${esc(result.error || "Unknown error")}</div>`; return; }
+        if (!resp.ok) { aiTab.innerHTML = `<div class="report" role="alert" style="color:var(--red);">LLM Error: ${esc(result.error || "Unknown error")}</div>`; btnRerunAi.disabled = false; return; }
         aiReportText = result.report;
         aiTab.innerHTML = `<div class="report" id="ai-report-content">${renderMarkdown(result.report)}</div>`;
         btnAiReport.disabled = false;
@@ -615,6 +615,7 @@ async function requestAiReport(data) {
         btnRerunAi.disabled = false;
     } catch (e) {
         aiTab.innerHTML = `<div class="report" role="alert" style="color:var(--red);">Request failed: ${esc(e.message)}</div>`;
+        btnRerunAi.disabled = false;
     }
 }
 
