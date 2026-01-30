@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PDFCompare</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min.mjs" type="module"></script>
     <style>
         :root {
             --bg: #0f172a;
@@ -28,36 +29,57 @@
         }
         a.skip-link:focus { left: 0; }
 
-        header { padding: 1.5rem 2rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 1rem; }
+        header { padding: 1rem 2rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 1rem; }
         header h1 { font-size: 1.5rem; font-weight: 700; }
         header span { color: var(--muted); font-size: .9rem; }
 
-        .container { max-width: 1400px; margin: 0 auto; padding: 2rem; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 1.5rem 2rem; }
 
         /* Drop zone */
-        .drop-area {
-            display: flex; gap: 2rem; margin-bottom: 2rem;
-        }
+        .drop-area { display: flex; gap: 2rem; margin-bottom: 1.5rem; }
         .drop-zone {
             flex: 1; border: 2px dashed var(--border); border-radius: 12px;
-            padding: 3rem 1.5rem; text-align: center; cursor: pointer;
+            padding: 2.5rem 1.5rem; text-align: center; cursor: pointer;
             transition: border-color .2s, background .2s; position: relative;
         }
-        .drop-zone:hover, .drop-zone.dragover {
-            border-color: var(--accent); background: rgba(59,130,246,.06);
-        }
-        .drop-zone:focus-within {
-            border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 2px;
-        }
+        .drop-zone:hover, .drop-zone.dragover { border-color: var(--accent); background: rgba(59,130,246,.06); }
+        .drop-zone:focus-within { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 2px; }
         .drop-zone.has-file { border-color: var(--green); }
         .drop-zone input { display: none; }
         .drop-zone h3 { margin-bottom: .5rem; }
         .drop-zone p { color: var(--muted); font-size: .85rem; }
         .drop-zone .filename { color: var(--green); margin-top: .5rem; font-weight: 600; word-break: break-all; }
 
-        .actions { display: flex; gap: 1rem; margin-bottom: 2rem; flex-wrap: wrap; align-items: center; }
+        /* Settings panels */
+        .settings-row { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
+        .settings-row > details { flex: 1; }
+        details.panel {
+            background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+            padding: 1rem 1.25rem;
+        }
+        details.panel summary {
+            cursor: pointer; font-weight: 600; font-size: .9rem; user-select: none;
+            list-style: none; display: flex; align-items: center; gap: .5rem;
+        }
+        details.panel summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+        details.panel summary::before { content: "\25B6"; font-size: .65rem; transition: transform .2s; }
+        details.panel[open] summary::before { transform: rotate(90deg); }
+        details.panel .fields { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem 1.25rem; margin-top: .75rem; }
+        details.panel label { font-size: .8rem; color: var(--muted); display: flex; flex-direction: column; gap: .25rem; }
+        details.panel label.inline { flex-direction: row; align-items: center; gap: .5rem; }
+        details.panel select, details.panel input[type="text"], details.panel input[type="password"] {
+            padding: .45rem .6rem; border-radius: 6px; border: 1px solid var(--border);
+            background: var(--bg); color: var(--text); font-size: .82rem;
+        }
+        details.panel input[type="checkbox"] { width: 1rem; height: 1rem; accent-color: var(--accent); }
+        details.panel select:focus-visible, details.panel input:focus-visible {
+            outline: 2px solid var(--accent); outline-offset: 1px;
+        }
+        details.panel .hint { font-size: .72rem; color: var(--muted); margin-top: .4rem; grid-column: 1 / -1; }
+
+        .actions { display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; align-items: center; }
         button {
-            padding: .65rem 1.4rem; border: none; border-radius: 8px; font-size: .9rem;
+            padding: .6rem 1.2rem; border: none; border-radius: 8px; font-size: .85rem;
             cursor: pointer; font-weight: 600; transition: opacity .2s;
         }
         button:hover { opacity: .85; }
@@ -65,16 +87,15 @@
         button:disabled { opacity: .4; cursor: not-allowed; }
         .btn-primary { background: var(--accent); color: #fff; }
         .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+        .btn-sm { padding: .35rem .8rem; font-size: .78rem; }
 
-        .spinner { display: none; width: 20px; height: 20px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite; }
+        .spinner { display: none; width: 18px; height: 18px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
 
         /* Stats bar */
-        .stats {
-            display: flex; gap: 1.5rem; margin-bottom: 1.5rem; flex-wrap: wrap;
-        }
-        .stat { background: var(--surface); padding: .75rem 1.2rem; border-radius: 8px; font-size: .85rem; }
-        .stat b { display: block; font-size: 1.2rem; margin-bottom: .15rem; }
+        .stats { display: flex; gap: 1.25rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+        .stat { background: var(--surface); padding: .6rem 1rem; border-radius: 8px; font-size: .82rem; }
+        .stat b { display: block; font-size: 1.1rem; margin-bottom: .1rem; }
         .stat.ins b { color: var(--green); }
         .stat.del b { color: var(--red); }
         .stat.mod b { color: var(--yellow); }
@@ -82,75 +103,84 @@
         /* Tabs */
         .tabs { display: flex; gap: 0; margin-bottom: 0; }
         .tab {
-            padding: .6rem 1.2rem; background: var(--surface); border: 1px solid var(--border);
-            border-bottom: none; cursor: pointer; font-size: .85rem; color: var(--muted);
+            padding: .55rem 1rem; background: var(--surface); border: 1px solid var(--border);
+            border-bottom: none; cursor: pointer; font-size: .82rem; color: var(--muted);
             border-radius: 8px 8px 0 0; margin-right: -1px;
         }
         .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; z-index: 1; }
         .tab[aria-selected="true"] { background: var(--bg); color: var(--text); font-weight: 600; }
 
-        .tab-content { display: none; border: 1px solid var(--border); border-radius: 0 8px 8px 8px; padding: 1.5rem; background: var(--bg); }
+        .tab-content { display: none; border: 1px solid var(--border); border-radius: 0 8px 8px 8px; padding: 1.25rem; background: var(--bg); }
         .tab-content.active { display: block; }
 
         /* Side-by-side diff */
-        .diff-view { display: flex; gap: 0; font-family: 'Fira Code', 'Consolas', monospace; font-size: .82rem; line-height: 1.6; overflow-x: auto; }
+        .diff-view { display: flex; gap: 0; font-family: 'Fira Code', 'Consolas', monospace; font-size: .8rem; line-height: 1.55; overflow-x: auto; }
         .diff-col { flex: 1; min-width: 0; }
-        .diff-col-header { padding: .5rem .75rem; background: var(--surface); font-weight: 600; font-size: .8rem; color: var(--muted); border-bottom: 1px solid var(--border); position: sticky; top: 0; }
-        .diff-line { padding: 1px 8px; white-space: pre-wrap; word-break: break-all; min-height: 1.6em; border-bottom: 1px solid rgba(51,65,85,.3); }
+        .diff-col-header { padding: .4rem .75rem; background: var(--surface); font-weight: 600; font-size: .78rem; color: var(--muted); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 1; }
+        .diff-line { padding: 1px 8px; white-space: pre-wrap; word-break: break-all; min-height: 1.55em; border-bottom: 1px solid rgba(51,65,85,.3); }
         .diff-line.equal { }
         .diff-line.insert { background: var(--green-bg); border-left: 3px solid var(--green); }
         .diff-line.delete { background: var(--red-bg); border-left: 3px solid var(--red); }
         .diff-line.replace { background: var(--yellow-bg); border-left: 3px solid var(--yellow); }
         .diff-line.empty { background: var(--surface); opacity: .4; }
+        .diff-line.page-break { background: var(--surface); color: var(--accent); font-weight: 600; text-align: center; font-size: .75rem; padding: .3rem; border-left: none; }
         .diff-gutter { display: inline-block; width: 3.5em; text-align: right; padding-right: .75em; color: var(--muted); user-select: none; opacity: .6; }
         .diff-marker { user-select: none; font-weight: 700; margin-right: .3em; }
         .diff-marker.add { color: var(--green); }
         .diff-marker.del { color: var(--red); }
         .diff-marker.mod { color: var(--yellow); }
+        /* Word-level highlight */
+        .wdiff-del { background: rgba(239,68,68,.25); border-radius: 2px; padding: 0 1px; text-decoration: line-through; text-decoration-color: var(--red); }
+        .wdiff-ins { background: rgba(34,197,94,.25); border-radius: 2px; padding: 0 1px; }
 
         /* Unified diff */
-        .unified-diff { font-family: 'Fira Code', 'Consolas', monospace; font-size: .82rem; line-height: 1.6; white-space: pre-wrap; word-break: break-all; max-height: 600px; overflow: auto; }
+        .unified-diff { font-family: 'Fira Code', 'Consolas', monospace; font-size: .8rem; line-height: 1.55; white-space: pre-wrap; word-break: break-all; max-height: 600px; overflow: auto; }
 
         /* Report */
-        .report { max-height: 700px; overflow: auto; line-height: 1.7; }
-        .report h1 { font-size: 1.4rem; margin-bottom: .5rem; }
-        .report h2 { font-size: 1.15rem; margin-top: 1.5rem; margin-bottom: .5rem; color: var(--accent); }
-        .report h3 { font-size: 1rem; margin-top: 1rem; margin-bottom: .4rem; }
-        .report table { border-collapse: collapse; margin: .75rem 0; width: auto; }
-        .report th, .report td { border: 1px solid var(--border); padding: .35rem .75rem; text-align: left; font-size: .85rem; }
+        .report { max-height: 700px; overflow: auto; line-height: 1.65; }
+        .report h1 { font-size: 1.3rem; margin-bottom: .5rem; }
+        .report h2 { font-size: 1.1rem; margin-top: 1.25rem; margin-bottom: .4rem; color: var(--accent); }
+        .report h3 { font-size: .95rem; margin-top: .75rem; margin-bottom: .3rem; }
+        .report table { border-collapse: collapse; margin: .6rem 0; width: auto; }
+        .report th, .report td { border: 1px solid var(--border); padding: .3rem .65rem; text-align: left; font-size: .82rem; }
         .report th { background: var(--surface); }
-        .report hr { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
+        .report hr { border: none; border-top: 1px solid var(--border); margin: .75rem 0; }
         .report ul, .report ol { padding-left: 1.5rem; }
         .report em { color: var(--muted); }
 
-        #results { display: none; }
+        /* PDF preview */
+        .pdf-preview { display: flex; gap: 1rem; }
+        .pdf-preview-col { flex: 1; min-width: 0; text-align: center; }
+        .pdf-preview-col h4 { font-size: .82rem; color: var(--muted); margin-bottom: .5rem; }
+        .pdf-nav { display: flex; gap: .5rem; justify-content: center; align-items: center; margin-bottom: .5rem; font-size: .8rem; }
+        .pdf-canvas-wrap { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: #fff; display: flex; justify-content: center; min-height: 300px; }
+        .pdf-canvas-wrap canvas { max-width: 100%; height: auto; }
 
-        /* LLM settings panel */
-        .llm-panel {
-            background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-            padding: 1.25rem 1.5rem; margin-bottom: 2rem;
+        /* Metadata diff */
+        .meta-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+        .meta-table th, .meta-table td { padding: .4rem .75rem; border: 1px solid var(--border); text-align: left; }
+        .meta-table th { background: var(--surface); font-weight: 600; }
+        .meta-table .changed { background: var(--yellow-bg); }
+
+        /* History sidebar */
+        .history-panel { margin-top: 1.5rem; }
+        .history-panel h3 { font-size: .9rem; margin-bottom: .5rem; }
+        .history-list { list-style: none; max-height: 200px; overflow: auto; }
+        .history-list li {
+            padding: .5rem .75rem; border: 1px solid var(--border); border-radius: 6px;
+            margin-bottom: .35rem; font-size: .8rem; cursor: pointer; display: flex;
+            justify-content: space-between; align-items: center;
+            transition: background .15s;
         }
-        .llm-panel summary {
-            cursor: pointer; font-weight: 600; font-size: .95rem; user-select: none; list-style: none;
-            display: flex; align-items: center; gap: .5rem;
-        }
-        .llm-panel summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-        .llm-panel summary::before { content: "\25B6"; font-size: .7rem; transition: transform .2s; }
-        .llm-panel[open] summary::before { transform: rotate(90deg); }
-        .llm-panel .fields { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem 1.5rem; margin-top: 1rem; }
-        .llm-panel label { font-size: .82rem; color: var(--muted); display: flex; flex-direction: column; gap: .3rem; }
-        .llm-panel select, .llm-panel input {
-            padding: .5rem .7rem; border-radius: 6px; border: 1px solid var(--border);
-            background: var(--bg); color: var(--text); font-size: .85rem;
-        }
-        .llm-panel select:focus-visible, .llm-panel input:focus-visible {
-            outline: 2px solid var(--accent); outline-offset: 1px;
-        }
-        .llm-panel .hint { font-size: .75rem; color: var(--muted); margin-top: .5rem; grid-column: 1 / -1; }
+        .history-list li:hover { background: var(--surface); }
+        .history-list li .hist-date { color: var(--muted); font-size: .72rem; }
+        .history-list li .hist-del { color: var(--red); cursor: pointer; font-weight: 700; padding: 0 .3rem; }
 
         /* AI report tab */
         .ai-loading { display: flex; align-items: center; gap: .75rem; color: var(--muted); padding: 2rem 0; }
         .ai-loading .spinner { display: inline-block; }
+
+        #results { display: none; }
     </style>
 </head>
 <body>
@@ -176,66 +206,99 @@
             </label>
         </div>
 
-        <details class="llm-panel" id="llm-panel">
-            <summary>LLM Configuration (optional — AI-powered report)</summary>
-            <div class="fields">
-                <label>
-                    Provider
-                    <select id="llm-provider" aria-describedby="llm-hint">
-                        <option value="">None (use built-in report only)</option>
-                        <option value="ollama">Ollama (local)</option>
-                        <option value="openai">OpenAI (ChatGPT)</option>
-                        <option value="gemini">Google Gemini</option>
-                    </select>
-                </label>
-                <label>
-                    Model
-                    <input type="text" id="llm-model" placeholder="e.g. llama3, gpt-4o, gemini-2.0-flash" aria-describedby="llm-hint">
-                </label>
-                <label>
-                    API Key
-                    <input type="password" id="llm-apikey" placeholder="Not needed for Ollama" aria-describedby="llm-hint">
-                </label>
-                <label>
-                    Endpoint (optional override)
-                    <input type="text" id="llm-endpoint" placeholder="Leave blank for default" aria-describedby="llm-hint">
-                </label>
-                <div class="hint" id="llm-hint">
-                    <b>Ollama:</b> runs locally, no key needed, default endpoint http://localhost:11434 &nbsp;|&nbsp;
-                    <b>OpenAI:</b> requires API key from platform.openai.com &nbsp;|&nbsp;
-                    <b>Gemini:</b> requires API key from aistudio.google.com
+        <div class="settings-row">
+            <details class="panel" id="ignore-panel">
+                <summary>Ignore Rules</summary>
+                <div class="fields">
+                    <label class="inline">
+                        <input type="checkbox" id="ignore-whitespace"> Ignore whitespace differences
+                    </label>
+                    <label class="inline">
+                        <input type="checkbox" id="ignore-case"> Ignore case differences
+                    </label>
+                    <label class="inline">
+                        <input type="checkbox" id="ignore-headers-footers"> Ignore headers/footers &amp; page numbers
+                    </label>
+                    <label>
+                        Ignore lines matching regex
+                        <input type="text" id="ignore-pattern" placeholder="e.g. ^CONFIDENTIAL.*">
+                    </label>
                 </div>
-            </div>
-        </details>
+            </details>
+
+            <details class="panel" id="llm-panel">
+                <summary>LLM Configuration</summary>
+                <div class="fields">
+                    <label>
+                        Provider
+                        <select id="llm-provider" aria-describedby="llm-hint">
+                            <option value="">None (built-in report only)</option>
+                            <option value="ollama">Ollama (local)</option>
+                            <option value="openai">OpenAI (ChatGPT)</option>
+                            <option value="gemini">Google Gemini</option>
+                        </select>
+                    </label>
+                    <label>
+                        Model
+                        <input type="text" id="llm-model" placeholder="e.g. llama3, gpt-4o" aria-describedby="llm-hint">
+                    </label>
+                    <label>
+                        API Key
+                        <input type="password" id="llm-apikey" placeholder="Not needed for Ollama" aria-describedby="llm-hint">
+                    </label>
+                    <label>
+                        Endpoint
+                        <input type="text" id="llm-endpoint" placeholder="Leave blank for default" aria-describedby="llm-hint">
+                    </label>
+                    <div class="hint" id="llm-hint">
+                        <b>Ollama:</b> local, no key &nbsp;|&nbsp;
+                        <b>OpenAI:</b> key from platform.openai.com &nbsp;|&nbsp;
+                        <b>Gemini:</b> key from aistudio.google.com
+                    </div>
+                </div>
+            </details>
+        </div>
 
         <div class="actions">
             <button class="btn-primary" id="btn-compare" disabled>Compare</button>
-            <div class="spinner" id="spinner" role="status" aria-label="Comparing documents">
-                <span class="sr-only">Loading…</span>
-            </div>
-            <button class="btn-secondary" id="btn-export-diff" disabled>Export Diff File</button>
-            <button class="btn-secondary" id="btn-export-report" disabled>Export Report (.md)</button>
-            <button class="btn-secondary" id="btn-export-ai-report" disabled>Export AI Report (.md)</button>
+            <div class="spinner" id="spinner" role="status" aria-label="Comparing documents"></div>
+            <button class="btn-secondary" id="btn-export-diff" disabled>Export Diff</button>
+            <button class="btn-secondary" id="btn-export-report" disabled>Export Report</button>
+            <button class="btn-secondary" id="btn-export-ai-report" disabled>Export AI Report</button>
         </div>
 
         <div id="results">
             <div class="stats" id="stats-bar" aria-label="Comparison statistics"></div>
 
             <div class="tabs" role="tablist" aria-label="Result views">
-                <button class="tab" role="tab" aria-selected="true" aria-controls="tab-side-by-side" id="tab-btn-side-by-side" data-tab="side-by-side" tabindex="0">Side-by-Side</button>
-                <button class="tab" role="tab" aria-selected="false" aria-controls="tab-unified" id="tab-btn-unified" data-tab="unified" tabindex="-1">Unified Diff</button>
-                <button class="tab" role="tab" aria-selected="false" aria-controls="tab-report" id="tab-btn-report" data-tab="report" tabindex="-1">Report</button>
-                <button class="tab" role="tab" aria-selected="false" aria-controls="tab-ai-report" id="tab-btn-ai-report" data-tab="ai-report" tabindex="-1">AI Report</button>
+                <button class="tab" role="tab" aria-selected="true" aria-controls="tab-side-by-side" id="tab-btn-side-by-side" tabindex="0">Side-by-Side</button>
+                <button class="tab" role="tab" aria-selected="false" aria-controls="tab-unified" id="tab-btn-unified" tabindex="-1">Unified Diff</button>
+                <button class="tab" role="tab" aria-selected="false" aria-controls="tab-pdf-preview" id="tab-btn-pdf-preview" tabindex="-1">PDF Preview</button>
+                <button class="tab" role="tab" aria-selected="false" aria-controls="tab-metadata" id="tab-btn-metadata" tabindex="-1">Metadata</button>
+                <button class="tab" role="tab" aria-selected="false" aria-controls="tab-report" id="tab-btn-report" tabindex="-1">Report</button>
+                <button class="tab" role="tab" aria-selected="false" aria-controls="tab-ai-report" id="tab-btn-ai-report" tabindex="-1">AI Report</button>
             </div>
 
             <div class="tab-content active" id="tab-side-by-side" role="tabpanel" aria-labelledby="tab-btn-side-by-side"></div>
             <div class="tab-content" id="tab-unified" role="tabpanel" aria-labelledby="tab-btn-unified"></div>
+            <div class="tab-content" id="tab-pdf-preview" role="tabpanel" aria-labelledby="tab-btn-pdf-preview"></div>
+            <div class="tab-content" id="tab-metadata" role="tabpanel" aria-labelledby="tab-btn-metadata"></div>
             <div class="tab-content" id="tab-report" role="tabpanel" aria-labelledby="tab-btn-report"></div>
             <div class="tab-content" id="tab-ai-report" role="tabpanel" aria-labelledby="tab-btn-ai-report"></div>
         </div>
+
+        <div class="history-panel">
+            <h3>Comparison History</h3>
+            <ul class="history-list" id="history-list"></ul>
+        </div>
     </main>
 
-<script>
+<script type="module">
+// ── PDF.js setup ────────────────────────────────────────────────────────────
+const pdfjsLib = await import("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min.mjs");
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.worker.min.mjs";
+
+// ── DOM refs ────────────────────────────────────────────────────────────────
 const fileA = document.getElementById("file-a");
 const fileB = document.getElementById("file-b");
 const zoneA = document.getElementById("zone-a");
@@ -247,7 +310,7 @@ const btnDiff = document.getElementById("btn-export-diff");
 const btnReport = document.getElementById("btn-export-report");
 const btnAiReport = document.getElementById("btn-export-ai-report");
 const spinner = document.getElementById("spinner");
-const results = document.getElementById("results");
+const resultsEl = document.getElementById("results");
 
 const llmProvider = document.getElementById("llm-provider");
 const llmModel = document.getElementById("llm-model");
@@ -256,8 +319,11 @@ const llmEndpoint = document.getElementById("llm-endpoint");
 
 let compareResult = null;
 let aiReportText = null;
+let pdfBytesA = null, pdfBytesB = null;
+let pdfDocA = null, pdfDocB = null;
+let currentPageA = 1, currentPageB = 1;
 
-// Load server-side defaults from .env on startup
+// ── Load server defaults ────────────────────────────────────────────────────
 (async function loadDefaults() {
     try {
         const resp = await fetch("/api/config");
@@ -267,70 +333,61 @@ let aiReportText = null;
         if (cfg.llm_model && !llmModel.value) llmModel.value = cfg.llm_model;
         if (cfg.llm_endpoint && !llmEndpoint.value) llmEndpoint.value = cfg.llm_endpoint;
         if (cfg.has_api_key) llmApiKey.placeholder = "Set via server .env";
-    } catch (_) { /* server defaults are optional */ }
+    } catch (_) {}
 })();
 
-// Set sensible model defaults when provider changes
 llmProvider.addEventListener("change", () => {
     const defaults = { ollama: "llama3", openai: "gpt-4o", gemini: "gemini-2.0-flash" };
-    if (!llmModel.value && defaults[llmProvider.value]) {
-        llmModel.value = defaults[llmProvider.value];
-    }
+    if (!llmModel.value && defaults[llmProvider.value]) llmModel.value = defaults[llmProvider.value];
 });
 
-function setupZone(zone, input, nameEl) {
+// ── Drop zones ──────────────────────────────────────────────────────────────
+function setupZone(zone, input, nameEl, side) {
     ["dragover", "dragenter"].forEach(e => zone.addEventListener(e, ev => { ev.preventDefault(); zone.classList.add("dragover"); }));
     ["dragleave", "drop"].forEach(e => zone.addEventListener(e, () => zone.classList.remove("dragover")));
     zone.addEventListener("drop", ev => {
         ev.preventDefault();
         const file = ev.dataTransfer.files[0];
         if (file && file.name.toLowerCase().endsWith(".pdf")) {
-            const dt = new DataTransfer();
-            dt.items.add(file);
-            input.files = dt.files;
-            nameEl.textContent = file.name;
-            zone.classList.add("has-file");
-            checkReady();
+            const dt = new DataTransfer(); dt.items.add(file); input.files = dt.files;
+            nameEl.textContent = file.name; zone.classList.add("has-file");
+            cacheFile(file, side); checkReady();
         }
     });
     input.addEventListener("change", () => {
         if (input.files[0]) {
-            nameEl.textContent = input.files[0].name;
-            zone.classList.add("has-file");
-            checkReady();
+            nameEl.textContent = input.files[0].name; zone.classList.add("has-file");
+            cacheFile(input.files[0], side); checkReady();
         }
     });
 }
-setupZone(zoneA, fileA, nameA);
-setupZone(zoneB, fileB, nameB);
 
-function checkReady() {
-    btnCompare.disabled = !(fileA.files[0] && fileB.files[0]);
+async function cacheFile(file, side) {
+    const buf = await file.arrayBuffer();
+    if (side === "a") { pdfBytesA = new Uint8Array(buf); pdfDocA = null; }
+    else { pdfBytesB = new Uint8Array(buf); pdfDocB = null; }
 }
 
-// Accessible tabs with arrow-key navigation
+setupZone(zoneA, fileA, nameA, "a");
+setupZone(zoneB, fileB, nameB, "b");
+
+function checkReady() { btnCompare.disabled = !(fileA.files[0] && fileB.files[0]); }
+
+// ── Tabs ────────────────────────────────────────────────────────────────────
 const tabButtons = document.querySelectorAll('[role="tab"]');
 const tabPanels = document.querySelectorAll('[role="tabpanel"]');
 
 function activateTab(tab) {
-    tabButtons.forEach(t => {
-        t.setAttribute("aria-selected", "false");
-        t.tabIndex = -1;
-    });
+    tabButtons.forEach(t => { t.setAttribute("aria-selected", "false"); t.tabIndex = -1; });
     tabPanels.forEach(p => p.classList.remove("active"));
-
-    tab.setAttribute("aria-selected", "true");
-    tab.tabIndex = 0;
-    tab.focus();
+    tab.setAttribute("aria-selected", "true"); tab.tabIndex = 0; tab.focus();
     document.getElementById(tab.getAttribute("aria-controls")).classList.add("active");
 }
 
 tabButtons.forEach(tab => {
     tab.addEventListener("click", () => activateTab(tab));
     tab.addEventListener("keydown", ev => {
-        const tabs = [...tabButtons];
-        const idx = tabs.indexOf(tab);
-        let target = null;
+        const tabs = [...tabButtons]; const idx = tabs.indexOf(tab); let target = null;
         if (ev.key === "ArrowRight") target = tabs[(idx + 1) % tabs.length];
         else if (ev.key === "ArrowLeft") target = tabs[(idx - 1 + tabs.length) % tabs.length];
         else if (ev.key === "Home") target = tabs[0];
@@ -339,14 +396,22 @@ tabButtons.forEach(tab => {
     });
 });
 
+// ── Compare ─────────────────────────────────────────────────────────────────
 btnCompare.addEventListener("click", async () => {
     const form = new FormData();
     form.append("pdf_a", fileA.files[0]);
     form.append("pdf_b", fileB.files[0]);
 
+    // Ignore rules
+    if (document.getElementById("ignore-whitespace").checked) form.append("ignore_whitespace", "true");
+    if (document.getElementById("ignore-case").checked) form.append("ignore_case", "true");
+    if (document.getElementById("ignore-headers-footers").checked) form.append("ignore_headers_footers", "true");
+    const pat = document.getElementById("ignore-pattern").value.trim();
+    if (pat) form.append("ignore_pattern", pat);
+
     btnCompare.disabled = true;
     spinner.style.display = "block";
-    results.style.display = "none";
+    resultsEl.style.display = "none";
 
     try {
         const resp = await fetch("/api/compare", { method: "POST", body: form });
@@ -355,14 +420,15 @@ btnCompare.addEventListener("click", async () => {
         compareResult = data;
         aiReportText = null;
         renderResults(data);
-        results.style.display = "block";
+        resultsEl.style.display = "block";
         btnDiff.disabled = false;
         btnReport.disabled = false;
 
-        // If an LLM provider is selected, request AI report in background
-        if (llmProvider.value) {
-            requestAiReport(data);
-        } else {
+        saveToHistory(data);
+        renderHistory();
+
+        if (llmProvider.value) { requestAiReport(data); }
+        else {
             document.getElementById("tab-ai-report").innerHTML =
                 '<div class="report" style="color:var(--muted);padding:2rem 0;">Configure an LLM provider above and re-run the comparison to generate an AI-powered report.</div>';
         }
@@ -374,34 +440,25 @@ btnCompare.addEventListener("click", async () => {
     }
 });
 
+// ── AI report ───────────────────────────────────────────────────────────────
 async function requestAiReport(data) {
     const aiTab = document.getElementById("tab-ai-report");
-    aiTab.innerHTML = '<div class="ai-loading" role="status"><div class="spinner" style="display:inline-block"></div> Generating AI report&hellip; this may take a moment.</div>';
+    aiTab.innerHTML = '<div class="ai-loading" role="status"><div class="spinner" style="display:inline-block"></div> Generating AI report&hellip;</div>';
     btnAiReport.disabled = true;
 
-    const config = {};
-    if (llmModel.value) config.model = llmModel.value;
-    if (llmApiKey.value) config.api_key = llmApiKey.value;
-    if (llmEndpoint.value) config.endpoint = llmEndpoint.value;
+    const cfg = {};
+    if (llmModel.value) cfg.model = llmModel.value;
+    if (llmApiKey.value) cfg.api_key = llmApiKey.value;
+    if (llmEndpoint.value) cfg.endpoint = llmEndpoint.value;
 
     try {
         const resp = await fetch("/api/llm-report", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                provider: llmProvider.value,
-                config,
-                unified_diff: data.unified_diff,
-                stats: data.stats,
-                name_a: data.name_a,
-                name_b: data.name_b,
-            }),
+            body: JSON.stringify({ provider: llmProvider.value, config: cfg, unified_diff: data.unified_diff, stats: data.stats, name_a: data.name_a, name_b: data.name_b }),
         });
         const result = await resp.json();
-        if (!resp.ok) {
-            aiTab.innerHTML = `<div class="report" role="alert" style="color:var(--red);">LLM Error: ${esc(result.error || "Unknown error")}</div>`;
-            return;
-        }
+        if (!resp.ok) { aiTab.innerHTML = `<div class="report" role="alert" style="color:var(--red);">LLM Error: ${esc(result.error || "Unknown error")}</div>`; return; }
         aiReportText = result.report;
         aiTab.innerHTML = `<div class="report">${renderMarkdown(result.report)}</div>`;
         btnAiReport.disabled = false;
@@ -410,8 +467,8 @@ async function requestAiReport(data) {
     }
 }
 
+// ── Render results ──────────────────────────────────────────────────────────
 function renderResults(data) {
-    // Stats
     const s = data.stats;
     document.getElementById("stats-bar").innerHTML = `
         <div class="stat"><b>${s.equal}</b>Unchanged</div>
@@ -420,11 +477,30 @@ function renderResults(data) {
         <div class="stat mod"><b>~${s.replace}</b>Modified</div>
     `;
 
-    // Side-by-side with text markers for colorblind accessibility
+    renderSideBySide(data);
+    document.getElementById("tab-unified").innerHTML = `<div class="unified-diff">${esc(data.unified_diff)}</div>`;
+    document.getElementById("tab-report").innerHTML = `<div class="report">${renderMarkdown(data.report)}</div>`;
+    renderMetadataTab(data);
+    renderPdfPreviewTab();
+}
+
+// ── Side-by-side with word-level diffs and page markers ─────────────────────
+function renderSideBySide(data) {
     let leftHtml = `<div class="diff-col-header">${esc(data.name_a)}</div>`;
     let rightHtml = `<div class="diff-col-header">${esc(data.name_b)}</div>`;
+    let lastLeftPage = null, lastRightPage = null;
 
     for (const block of data.diff_blocks) {
+        // Insert page break markers
+        if (block.left_page && block.left_page !== lastLeftPage) {
+            leftHtml += `<div class="diff-line page-break">— Page ${block.left_page} —</div>`;
+            lastLeftPage = block.left_page;
+        }
+        if (block.right_page && block.right_page !== lastRightPage) {
+            rightHtml += `<div class="diff-line page-break">— Page ${block.right_page} —</div>`;
+            lastRightPage = block.right_page;
+        }
+
         const maxLen = Math.max(block.left_lines.length, block.right_lines.length);
         for (let i = 0; i < maxLen; i++) {
             const hasLeft = i < block.left_lines.length;
@@ -434,34 +510,200 @@ function renderResults(data) {
             const lClass = !hasLeft ? "empty" : (block.tag === "equal" ? "equal" : block.tag === "delete" ? "delete" : "replace");
             const rClass = !hasRight ? "empty" : (block.tag === "equal" ? "equal" : block.tag === "insert" ? "insert" : "replace");
 
-            // Text markers: "-" for deleted, "+" for inserted, "~" for modified
             let lMarker = "", rMarker = "";
             if (block.tag === "delete" && hasLeft) lMarker = '<span class="diff-marker del" aria-hidden="true">-</span>';
             if (block.tag === "insert" && hasRight) rMarker = '<span class="diff-marker add" aria-hidden="true">+</span>';
             if (block.tag === "replace" && hasLeft) lMarker = '<span class="diff-marker mod" aria-hidden="true">~</span>';
             if (block.tag === "replace" && hasRight) rMarker = '<span class="diff-marker mod" aria-hidden="true">~</span>';
 
-            leftHtml += `<div class="diff-line ${lClass}"><span class="diff-gutter">${lnum}</span>${lMarker}${hasLeft ? esc(block.left_lines[i]) : ""}</div>`;
-            rightHtml += `<div class="diff-line ${rClass}"><span class="diff-gutter">${rnum}</span>${rMarker}${hasRight ? esc(block.right_lines[i]) : ""}</div>`;
+            // Word-level highlighting for replace blocks
+            let lContent = hasLeft ? esc(block.left_lines[i]) : "";
+            let rContent = hasRight ? esc(block.right_lines[i]) : "";
+
+            if (block.tag === "replace" && block.word_diffs && block.word_diffs[i]) {
+                const wd = block.word_diffs[i];
+                if (hasLeft) lContent = renderWordSpans(wd.left_spans, "left");
+                if (hasRight) rContent = renderWordSpans(wd.right_spans, "right");
+            }
+
+            leftHtml += `<div class="diff-line ${lClass}"><span class="diff-gutter">${lnum}</span>${lMarker}${lContent}</div>`;
+            rightHtml += `<div class="diff-line ${rClass}"><span class="diff-gutter">${rnum}</span>${rMarker}${rContent}</div>`;
         }
     }
     document.getElementById("tab-side-by-side").innerHTML = `<div class="diff-view"><div class="diff-col">${leftHtml}</div><div class="diff-col">${rightHtml}</div></div>`;
-
-    // Unified diff
-    document.getElementById("tab-unified").innerHTML = `<div class="unified-diff">${esc(data.unified_diff)}</div>`;
-
-    // Report (render markdown simply)
-    document.getElementById("tab-report").innerHTML = `<div class="report">${renderMarkdown(data.report)}</div>`;
 }
 
+function renderWordSpans(spans, side) {
+    return spans.map(([text, type]) => {
+        const escaped = esc(text);
+        if (type === "equal") return escaped + " ";
+        if (side === "left") return `<span class="wdiff-del">${escaped}</span> `;
+        return `<span class="wdiff-ins">${escaped}</span> `;
+    }).join("");
+}
+
+// ── Metadata tab ────────────────────────────────────────────────────────────
+function renderMetadataTab(data) {
+    const fields = ["title", "author", "subject", "creator", "producer", "creation_date", "mod_date", "page_count"];
+    const labels = { title: "Title", author: "Author", subject: "Subject", creator: "Creator", producer: "Producer", creation_date: "Creation Date", mod_date: "Modification Date", page_count: "Page Count" };
+    const changedFields = new Set((data.metadata_diff || []).map(d => d.field));
+
+    let html = '<table class="meta-table"><thead><tr><th>Field</th><th>Document A</th><th>Document B</th></tr></thead><tbody>';
+    for (const f of fields) {
+        const cls = changedFields.has(f) ? ' class="changed"' : '';
+        html += `<tr${cls}><td><strong>${labels[f] || f}</strong></td><td>${esc(String(data.metadata_a[f] || "—"))}</td><td>${esc(String(data.metadata_b[f] || "—"))}</td></tr>`;
+    }
+    html += '</tbody></table>';
+
+    if (data.metadata_diff && data.metadata_diff.length > 0) {
+        html += `<p style="margin-top:.75rem;font-size:.82rem;color:var(--yellow);">${data.metadata_diff.length} metadata field(s) differ between documents.</p>`;
+    } else {
+        html += '<p style="margin-top:.75rem;font-size:.82rem;color:var(--muted);">Metadata is identical.</p>';
+    }
+    document.getElementById("tab-metadata").innerHTML = html;
+}
+
+// ── PDF preview tab ─────────────────────────────────────────────────────────
+function renderPdfPreviewTab() {
+    document.getElementById("tab-pdf-preview").innerHTML = `
+        <div class="pdf-preview">
+            <div class="pdf-preview-col">
+                <h4>Document A</h4>
+                <div class="pdf-nav">
+                    <button class="btn-secondary btn-sm" id="pdf-a-prev">Prev</button>
+                    <span id="pdf-a-info">Page 1</span>
+                    <button class="btn-secondary btn-sm" id="pdf-a-next">Next</button>
+                </div>
+                <div class="pdf-canvas-wrap"><canvas id="pdf-canvas-a"></canvas></div>
+            </div>
+            <div class="pdf-preview-col">
+                <h4>Document B</h4>
+                <div class="pdf-nav">
+                    <button class="btn-secondary btn-sm" id="pdf-b-prev">Prev</button>
+                    <span id="pdf-b-info">Page 1</span>
+                    <button class="btn-secondary btn-sm" id="pdf-b-next">Next</button>
+                </div>
+                <div class="pdf-canvas-wrap"><canvas id="pdf-canvas-b"></canvas></div>
+            </div>
+        </div>
+    `;
+
+    currentPageA = 1; currentPageB = 1;
+    loadPdfDocs().then(() => {
+        renderPdfPage("a"); renderPdfPage("b");
+    });
+
+    document.getElementById("pdf-a-prev").addEventListener("click", () => { if (currentPageA > 1) { currentPageA--; renderPdfPage("a"); } });
+    document.getElementById("pdf-a-next").addEventListener("click", () => { if (pdfDocA && currentPageA < pdfDocA.numPages) { currentPageA++; renderPdfPage("a"); } });
+    document.getElementById("pdf-b-prev").addEventListener("click", () => { if (currentPageB > 1) { currentPageB--; renderPdfPage("b"); } });
+    document.getElementById("pdf-b-next").addEventListener("click", () => { if (pdfDocB && currentPageB < pdfDocB.numPages) { currentPageB++; renderPdfPage("b"); } });
+}
+
+async function loadPdfDocs() {
+    try {
+        if (pdfBytesA && !pdfDocA) pdfDocA = await pdfjsLib.getDocument({ data: pdfBytesA.slice() }).promise;
+        if (pdfBytesB && !pdfDocB) pdfDocB = await pdfjsLib.getDocument({ data: pdfBytesB.slice() }).promise;
+    } catch (e) {
+        console.warn("PDF.js load failed:", e);
+    }
+}
+
+async function renderPdfPage(side) {
+    const doc = side === "a" ? pdfDocA : pdfDocB;
+    const pageNum = side === "a" ? currentPageA : currentPageB;
+    const canvas = document.getElementById(`pdf-canvas-${side}`);
+    const info = document.getElementById(`pdf-${side}-info`);
+    if (!doc || !canvas) return;
+
+    info.textContent = `Page ${pageNum} / ${doc.numPages}`;
+    const page = await doc.getPage(pageNum);
+    const viewport = page.getViewport({ scale: 1.5 });
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+}
+
+// ── History (localStorage) ──────────────────────────────────────────────────
+const HISTORY_KEY = "pdfcompare_history";
+const MAX_HISTORY = 20;
+
+function getHistory() {
+    try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]"); } catch { return []; }
+}
+
+function saveToHistory(data) {
+    const history = getHistory();
+    const entry = {
+        id: Date.now(),
+        date: new Date().toISOString(),
+        name_a: data.name_a,
+        name_b: data.name_b,
+        stats: data.stats,
+        unified_diff: data.unified_diff,
+        report: data.report,
+        diff_blocks: data.diff_blocks,
+        metadata_a: data.metadata_a,
+        metadata_b: data.metadata_b,
+        metadata_diff: data.metadata_diff,
+    };
+    history.unshift(entry);
+    if (history.length > MAX_HISTORY) history.length = MAX_HISTORY;
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); } catch { /* quota exceeded */ }
+}
+
+function renderHistory() {
+    const list = document.getElementById("history-list");
+    const history = getHistory();
+    if (history.length === 0) { list.innerHTML = '<li style="color:var(--muted);cursor:default;">No history yet</li>'; return; }
+
+    list.innerHTML = history.map(h => {
+        const d = new Date(h.date);
+        const label = `${h.name_a} vs ${h.name_b}`;
+        const dateStr = d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        const changed = h.stats.insert + h.stats.delete + h.stats.replace;
+        return `<li data-id="${h.id}"><div><strong>${esc(label)}</strong><br><span class="hist-date">${dateStr} — ${changed} change(s)</span></div><span class="hist-del" data-del="${h.id}" title="Remove">&times;</span></li>`;
+    }).join("");
+
+    list.querySelectorAll("li[data-id]").forEach(li => {
+        li.addEventListener("click", ev => {
+            if (ev.target.classList.contains("hist-del")) {
+                deleteHistoryEntry(parseInt(ev.target.dataset.del));
+                return;
+            }
+            const id = parseInt(li.dataset.id);
+            const entry = getHistory().find(h => h.id === id);
+            if (entry) { loadFromHistory(entry); }
+        });
+    });
+}
+
+function deleteHistoryEntry(id) {
+    const history = getHistory().filter(h => h.id !== id);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    renderHistory();
+}
+
+function loadFromHistory(entry) {
+    compareResult = entry;
+    aiReportText = null;
+    renderResults(entry);
+    resultsEl.style.display = "block";
+    btnDiff.disabled = false;
+    btnReport.disabled = false;
+    btnAiReport.disabled = true;
+    // Can't render PDF preview from history (no binary data), show message
+    document.getElementById("tab-pdf-preview").innerHTML = '<div style="color:var(--muted);padding:2rem 0;">PDF preview is not available for history entries. Re-upload the files and compare again to view PDF pages.</div>';
+}
+
+// Load history on startup
+renderHistory();
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
 function esc(s) {
-    const d = document.createElement("div");
-    d.textContent = s;
-    return d.innerHTML;
+    const d = document.createElement("div"); d.textContent = s; return d.innerHTML;
 }
 
 function renderMarkdown(md) {
-    // Simple markdown to HTML
     let html = esc(md);
     html = html.replace(/^### (.+)$/gm, "<h3>$1</h3>");
     html = html.replace(/^## (.+)$/gm, "<h2>$1</h2>");
@@ -471,7 +713,6 @@ function renderMarkdown(md) {
     html = html.replace(/^---$/gm, "<hr>");
     html = html.replace(/^\- (.+)$/gm, "<li>$1</li>");
     html = html.replace(/^\d+\. (.+)$/gm, "<li>$1</li>");
-    // Tables
     html = html.replace(/\|(.+)\|/g, (match) => {
         const cells = match.split("|").filter(c => c.trim()).map(c => c.trim());
         if (cells.every(c => /^[\-\|]+$/.test(c))) return "";
@@ -483,30 +724,16 @@ function renderMarkdown(md) {
     return html;
 }
 
-// Exports
-btnDiff.addEventListener("click", () => {
-    if (!compareResult) return;
-    download(compareResult.unified_diff, "diff.patch", "text/plain");
-});
-
-btnReport.addEventListener("click", () => {
-    if (!compareResult) return;
-    download(compareResult.report, "comparison-report.md", "text/markdown");
-});
-
-btnAiReport.addEventListener("click", () => {
-    if (!aiReportText) return;
-    download(aiReportText, "ai-comparison-report.md", "text/markdown");
-});
-
 function download(content, filename, type) {
     const blob = new Blob([content], { type });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+    a.download = filename; a.click(); URL.revokeObjectURL(a.href);
 }
+
+// ── Export buttons ──────────────────────────────────────────────────────────
+btnDiff.addEventListener("click", () => { if (compareResult) download(compareResult.unified_diff, "diff.patch", "text/plain"); });
+btnReport.addEventListener("click", () => { if (compareResult) download(compareResult.report, "comparison-report.md", "text/markdown"); });
+btnAiReport.addEventListener("click", () => { if (aiReportText) download(aiReportText, "ai-comparison-report.md", "text/markdown"); });
 </script>
 </body>
 </html>

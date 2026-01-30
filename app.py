@@ -1,4 +1,5 @@
 import io
+import re
 import difflib
 import logging
 from datetime import datetime
@@ -14,35 +15,123 @@ app.config["MAX_CONTENT_LENGTH"] = config.MAX_UPLOAD_MB * 1024 * 1024
 
 logger = logging.getLogger(__name__)
 
+# ── Sentinel used to mark page boundaries in extracted text ──────────────────
+PAGE_MARKER_PREFIX = "\x00PAGE:"
+
 
 def extract_text(pdf_bytes: bytes) -> list[str]:
-    """Extract text from a PDF, returning a list of lines."""
+    """Extract text from a PDF, returning a list of lines with page markers."""
     lines = []
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         for page in pdf.pages:
+            lines.append(f"{PAGE_MARKER_PREFIX}{page.page_number}")
             text = page.extract_text() or ""
             lines.extend(text.splitlines())
     return lines
 
 
+def extract_metadata(pdf_bytes: bytes) -> dict:
+    """Extract PDF metadata fields."""
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        meta = pdf.metadata or {}
+        return {
+            "title": meta.get("Title", "") or "",
+            "author": meta.get("Author", "") or "",
+            "subject": meta.get("Subject", "") or "",
+            "creator": meta.get("Creator", "") or "",
+            "producer": meta.get("Producer", "") or "",
+            "creation_date": meta.get("CreationDate", "") or "",
+            "mod_date": meta.get("ModDate", "") or "",
+            "page_count": len(pdf.pages),
+        }
+
+
+def _is_page_marker(line: str) -> bool:
+    return line.startswith(PAGE_MARKER_PREFIX)
+
+
+def _page_number_from_marker(line: str) -> int:
+    return int(line[len(PAGE_MARKER_PREFIX):])
+
+
+def _line_to_page(lines: list[str], line_idx: int) -> int:
+    """Walk backwards from line_idx to find the nearest page marker."""
+    for i in range(line_idx, -1, -1):
+        if _is_page_marker(lines[i]):
+            return _page_number_from_marker(lines[i])
+    return 1
+
+
+def apply_ignore_rules(lines: list[str], ignore_options: dict) -> list[str]:
+    """Apply ignore rules to extracted lines, preserving page markers."""
+    result = []
+    for line in lines:
+        if _is_page_marker(line):
+            result.append(line)
+            continue
+        if ignore_options.get("ignore_whitespace"):
+            line = " ".join(line.split())
+        if ignore_options.get("ignore_case"):
+            line = line.lower()
+        if ignore_options.get("ignore_pattern"):
+            try:
+                pattern = ignore_options["ignore_pattern"]
+                if re.fullmatch(pattern, line):
+                    continue
+            except re.error:
+                pass  # invalid regex, skip filtering
+        if ignore_options.get("ignore_headers_footers"):
+            stripped = line.strip()
+            # Skip lines that look like page numbers or common headers/footers
+            if re.fullmatch(r'[-–—\s]*\d+[-–—\s]*', stripped):
+                continue
+            if re.fullmatch(r'page\s+\d+(\s+of\s+\d+)?', stripped, re.IGNORECASE):
+                continue
+        result.append(line)
+    return result
+
+
 def compute_diff(lines_a: list[str], lines_b: list[str]):
-    """Return structured diff information."""
-    matcher = difflib.SequenceMatcher(None, lines_a, lines_b)
+    """Return structured diff information, skipping page markers from output."""
+    # Build content-only lists for diffing, but keep page mapping
+    content_a = [(i, l) for i, l in enumerate(lines_a) if not _is_page_marker(l)]
+    content_b = [(i, l) for i, l in enumerate(lines_b) if not _is_page_marker(l)]
+
+    text_a = [l for _, l in content_a]
+    text_b = [l for _, l in content_b]
+
+    matcher = difflib.SequenceMatcher(None, text_a, text_b)
     opcodes = matcher.get_opcodes()
 
     diff_blocks = []
     stats = {"equal": 0, "insert": 0, "delete": 0, "replace": 0}
 
     for tag, i1, i2, j1, j2 in opcodes:
+        left_lines_text = text_a[i1:i2]
+        right_lines_text = text_b[j1:j2]
+
+        # Compute word-level diffs for replace blocks
+        word_diffs = None
+        if tag == "replace":
+            word_diffs = compute_word_diffs(left_lines_text, right_lines_text)
+
+        # Map content indices back to original indices for page lookup
+        left_page = _line_to_page(lines_a, content_a[i1][0]) if i1 < len(content_a) else None
+        right_page = _line_to_page(lines_b, content_b[j1][0]) if j1 < len(content_b) else None
+
         block = {
             "tag": tag,
             "left_start": i1,
             "left_end": i2,
             "right_start": j1,
             "right_end": j2,
-            "left_lines": lines_a[i1:i2],
-            "right_lines": lines_b[j1:j2],
+            "left_lines": left_lines_text,
+            "right_lines": right_lines_text,
+            "left_page": left_page,
+            "right_page": right_page,
         }
+        if word_diffs is not None:
+            block["word_diffs"] = word_diffs
         diff_blocks.append(block)
 
         if tag == "equal":
@@ -57,11 +146,61 @@ def compute_diff(lines_a: list[str], lines_b: list[str]):
     return diff_blocks, stats
 
 
+def compute_word_diffs(left_lines: list[str], right_lines: list[str]) -> list[dict]:
+    """Compute word-level diffs for corresponding line pairs in a replace block.
+
+    Returns a list of dicts, one per line-pair, each containing:
+      left_spans: list of [text, type] where type is "equal" or "delete"
+      right_spans: list of [text, type] where type is "equal" or "insert"
+    """
+    result = []
+    max_len = max(len(left_lines), len(right_lines))
+    for i in range(max_len):
+        left = left_lines[i] if i < len(left_lines) else ""
+        right = right_lines[i] if i < len(right_lines) else ""
+
+        left_words = left.split()
+        right_words = right.split()
+        sm = difflib.SequenceMatcher(None, left_words, right_words)
+
+        left_spans = []
+        right_spans = []
+        for op, a1, a2, b1, b2 in sm.get_opcodes():
+            if op == "equal":
+                text = " ".join(left_words[a1:a2])
+                left_spans.append([text, "equal"])
+                right_spans.append([text, "equal"])
+            elif op == "delete":
+                left_spans.append([" ".join(left_words[a1:a2]), "delete"])
+            elif op == "insert":
+                right_spans.append([" ".join(right_words[b1:b2]), "insert"])
+            elif op == "replace":
+                left_spans.append([" ".join(left_words[a1:a2]), "delete"])
+                right_spans.append([" ".join(right_words[b1:b2]), "insert"])
+
+        result.append({"left_spans": left_spans, "right_spans": right_spans})
+    return result
+
+
+def compare_metadata(meta_a: dict, meta_b: dict) -> list[dict]:
+    """Compare two metadata dicts and return a list of differences."""
+    diffs = []
+    all_keys = sorted(set(list(meta_a.keys()) + list(meta_b.keys())))
+    for key in all_keys:
+        val_a = str(meta_a.get(key, ""))
+        val_b = str(meta_b.get(key, ""))
+        if val_a != val_b:
+            diffs.append({"field": key, "value_a": val_a, "value_b": val_b})
+    return diffs
+
+
 def generate_unified_diff(lines_a, lines_b, name_a="original.pdf", name_b="modified.pdf"):
-    """Generate a unified diff string."""
+    """Generate a unified diff string, excluding page markers."""
+    clean_a = [l for l in lines_a if not _is_page_marker(l)]
+    clean_b = [l for l in lines_b if not _is_page_marker(l)]
     return "\n".join(
         difflib.unified_diff(
-            lines_a, lines_b,
+            clean_a, clean_b,
             fromfile=name_a, tofile=name_b,
             lineterm=""
         )
@@ -121,6 +260,10 @@ def generate_report(diff_blocks, stats, name_a, name_b):
     deletions = [b for b in diff_blocks if b["tag"] == "delete"]
     modifications = [b for b in diff_blocks if b["tag"] == "replace"]
 
+    def _page_label(block, side="right"):
+        pg = block.get(f"{side}_page")
+        return f" (page {pg})" if pg else ""
+
     if additions:
         lines.append(f"### New Content ({len(additions)} section(s) added)")
         lines.append("")
@@ -132,7 +275,7 @@ def generate_report(diff_blocks, stats, name_a, name_b):
             preview = " ".join(b["right_lines"][:3])
             if len(preview) > 200:
                 preview = preview[:200] + "…"
-            lines.append(f"{i}. Near line {b['right_start'] + 1}: *\"{preview}\"*")
+            lines.append(f"{i}. Near line {b['right_start'] + 1}{_page_label(b, 'right')}: *\"{preview}\"*")
         if len(additions) > 10:
             lines.append(f"   *(and {len(additions) - 10} more…)*")
         lines.append("")
@@ -148,7 +291,7 @@ def generate_report(diff_blocks, stats, name_a, name_b):
             preview = " ".join(b["left_lines"][:3])
             if len(preview) > 200:
                 preview = preview[:200] + "…"
-            lines.append(f"{i}. Near line {b['left_start'] + 1}: *\"{preview}\"*")
+            lines.append(f"{i}. Near line {b['left_start'] + 1}{_page_label(b, 'left')}: *\"{preview}\"*")
         if len(deletions) > 10:
             lines.append(f"   *(and {len(deletions) - 10} more…)*")
         lines.append("")
@@ -167,7 +310,7 @@ def generate_report(diff_blocks, stats, name_a, name_b):
                 old_preview = old_preview[:150] + "…"
             if len(new_preview) > 150:
                 new_preview = new_preview[:150] + "…"
-            lines.append(f"{i}. Line {b['left_start'] + 1}:")
+            lines.append(f"{i}. Line {b['left_start'] + 1}{_page_label(b, 'left')}:")
             lines.append(f"   - **Was:** *\"{old_preview}\"*")
             lines.append(f"   - **Now:** *\"{new_preview}\"*")
         if len(modifications) > 10:
@@ -250,16 +393,31 @@ def compare():
     bytes_a = pdf_a.read()
     bytes_b = pdf_b.read()
 
+    # Parse ignore options from form data
+    ignore_options = {
+        "ignore_whitespace": request.form.get("ignore_whitespace") == "true",
+        "ignore_case": request.form.get("ignore_case") == "true",
+        "ignore_headers_footers": request.form.get("ignore_headers_footers") == "true",
+        "ignore_pattern": request.form.get("ignore_pattern", ""),
+    }
+
     try:
         lines_a = extract_text(bytes_a)
         lines_b = extract_text(bytes_b)
+        meta_a = extract_metadata(bytes_a)
+        meta_b = extract_metadata(bytes_b)
     except Exception:
         logger.exception("PDF text extraction failed")
         return jsonify({"error": "Failed to extract text from one or both PDFs."}), 422
 
-    diff_blocks, stats = compute_diff(lines_a, lines_b)
-    unified = generate_unified_diff(lines_a, lines_b, name_a, name_b)
+    # Apply ignore rules
+    filtered_a = apply_ignore_rules(lines_a, ignore_options)
+    filtered_b = apply_ignore_rules(lines_b, ignore_options)
+
+    diff_blocks, stats = compute_diff(filtered_a, filtered_b)
+    unified = generate_unified_diff(filtered_a, filtered_b, name_a, name_b)
     report = generate_report(diff_blocks, stats, name_a, name_b)
+    metadata_diff = compare_metadata(meta_a, meta_b)
 
     return jsonify({
         "diff_blocks": diff_blocks,
@@ -268,6 +426,9 @@ def compare():
         "report": report,
         "name_a": name_a,
         "name_b": name_b,
+        "metadata_a": meta_a,
+        "metadata_b": meta_b,
+        "metadata_diff": metadata_diff,
     })
 
 
