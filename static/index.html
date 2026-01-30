@@ -258,6 +258,11 @@
                         <b>OpenAI:</b> key from platform.openai.com &nbsp;|&nbsp;
                         <b>Gemini:</b> key from aistudio.google.com
                     </div>
+                    <div style="display:flex;gap:.5rem;align-items:center;margin-top:.75rem;">
+                        <button class="btn-secondary btn-sm" id="btn-save-llm" type="button">Save Settings</button>
+                        <button class="btn-secondary btn-sm" id="btn-clear-llm" type="button">Clear Settings</button>
+                        <span id="llm-save-feedback" style="font-size:.75rem;color:var(--green);opacity:0;transition:opacity .3s;"></span>
+                    </div>
                 </div>
             </details>
         </div>
@@ -333,6 +338,9 @@ let currentPageA = 1, currentPageB = 1;   // Current page index for PDF preview 
 // ── Load server defaults ────────────────────────────────────────────────────
 // Fetch non-secret LLM config from the server's .env so the UI fields
 // are pre-populated without the user having to re-enter them.
+// After loading server config, override with any localStorage values.
+const LLM_CONFIG_KEY = "pdfcompare_llm_config";
+
 (async function loadDefaults() {
     try {
         const resp = await fetch("/api/config");
@@ -343,12 +351,77 @@ let currentPageA = 1, currentPageB = 1;   // Current page index for PDF preview 
         if (cfg.llm_endpoint && !llmEndpoint.value) llmEndpoint.value = cfg.llm_endpoint;
         if (cfg.has_api_key) llmApiKey.placeholder = "Set via server .env";
     } catch (_) {}
+
+    // Override with localStorage values if present
+    loadLlmFromStorage();
 })();
+
+function loadLlmFromStorage() {
+    try {
+        const stored = localStorage.getItem(LLM_CONFIG_KEY);
+        if (!stored) return;
+        const cfg = JSON.parse(stored);
+        if (cfg.provider) llmProvider.value = cfg.provider;
+        if (cfg.model) llmModel.value = cfg.model;
+        if (cfg.apikey) llmApiKey.value = cfg.apikey;
+        if (cfg.endpoint) llmEndpoint.value = cfg.endpoint;
+    } catch (_) {}
+}
+
+function saveLlmToStorage() {
+    const cfg = {
+        provider: llmProvider.value,
+        model: llmModel.value,
+        apikey: llmApiKey.value,
+        endpoint: llmEndpoint.value
+    };
+    try {
+        localStorage.setItem(LLM_CONFIG_KEY, JSON.stringify(cfg));
+        showLlmFeedback("Saved!");
+    } catch (_) {
+        showLlmFeedback("Failed to save", "var(--red)");
+    }
+}
+
+async function clearLlmStorage() {
+    try {
+        localStorage.removeItem(LLM_CONFIG_KEY);
+        // Reset to server defaults
+        llmProvider.value = "";
+        llmModel.value = "";
+        llmApiKey.value = "";
+        llmEndpoint.value = "";
+        // Reload server defaults
+        try {
+            const resp = await fetch("/api/config");
+            if (resp.ok) {
+                const cfg = await resp.json();
+                if (cfg.llm_provider) llmProvider.value = cfg.llm_provider;
+                if (cfg.llm_model) llmModel.value = cfg.llm_model;
+                if (cfg.llm_endpoint) llmEndpoint.value = cfg.llm_endpoint;
+                if (cfg.has_api_key) llmApiKey.placeholder = "Set via server .env";
+            }
+        } catch (_) {}
+        showLlmFeedback("Cleared!");
+    } catch (_) {}
+}
+
+function showLlmFeedback(msg, color = "var(--green)") {
+    const el = document.getElementById("llm-save-feedback");
+    el.textContent = msg;
+    el.style.color = color;
+    el.style.opacity = "1";
+    setTimeout(() => { el.style.opacity = "0"; }, 1500);
+}
 
 llmProvider.addEventListener("change", () => {
     const defaults = { ollama: "llama3", openai: "gpt-4o", gemini: "gemini-2.0-flash" };
     if (!llmModel.value && defaults[llmProvider.value]) llmModel.value = defaults[llmProvider.value];
 });
+
+// Wire up Save and Clear buttons
+document.getElementById("btn-save-llm").addEventListener("click", saveLlmToStorage);
+document.getElementById("btn-clear-llm").addEventListener("click", clearLlmStorage);
 
 // ── Drop zones ──────────────────────────────────────────────────────────────
 // Wire up drag-and-drop and file-input events for each upload zone.
