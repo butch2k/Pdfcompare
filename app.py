@@ -8,6 +8,8 @@ from datetime import datetime
 from flask import Flask, request, jsonify, send_from_directory, send_file
 import pdfplumber
 
+from llm import generate_llm_report
+
 app = Flask(__name__, static_folder="static")
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB
 
@@ -245,6 +247,36 @@ def compare():
         "name_a": pdf_a.filename,
         "name_b": pdf_b.filename,
     })
+
+
+@app.route("/api/llm-report", methods=["POST"])
+def llm_report():
+    """Generate an LLM-powered analysis report from a previous comparison."""
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "JSON body required."}), 400
+
+    required = ["provider", "unified_diff", "stats", "name_a", "name_b"]
+    missing = [k for k in required if k not in data]
+    if missing:
+        return jsonify({"error": f"Missing fields: {missing}"}), 400
+
+    provider = data["provider"]
+    config = data.get("config", {})
+
+    try:
+        report = generate_llm_report(
+            provider=provider,
+            config=config,
+            unified_diff=data["unified_diff"],
+            stats=data["stats"],
+            name_a=data["name_a"],
+            name_b=data["name_b"],
+        )
+    except Exception as e:
+        return jsonify({"error": f"LLM request failed: {e}"}), 502
+
+    return jsonify({"report": report})
 
 
 @app.route("/<path:path>")

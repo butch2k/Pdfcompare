@@ -109,6 +109,29 @@
         .report em { color: var(--muted); }
 
         #results { display: none; }
+
+        /* LLM settings panel */
+        .llm-panel {
+            background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+            padding: 1.25rem 1.5rem; margin-bottom: 2rem;
+        }
+        .llm-panel summary {
+            cursor: pointer; font-weight: 600; font-size: .95rem; user-select: none; list-style: none;
+            display: flex; align-items: center; gap: .5rem;
+        }
+        .llm-panel summary::before { content: "\25B6"; font-size: .7rem; transition: transform .2s; }
+        .llm-panel[open] summary::before { transform: rotate(90deg); }
+        .llm-panel .fields { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem 1.5rem; margin-top: 1rem; }
+        .llm-panel label { font-size: .82rem; color: var(--muted); display: flex; flex-direction: column; gap: .3rem; }
+        .llm-panel select, .llm-panel input {
+            padding: .5rem .7rem; border-radius: 6px; border: 1px solid var(--border);
+            background: var(--bg); color: var(--text); font-size: .85rem;
+        }
+        .llm-panel .hint { font-size: .75rem; color: var(--muted); margin-top: .5rem; grid-column: 1 / -1; }
+
+        /* AI report tab */
+        .ai-loading { display: flex; align-items: center; gap: .75rem; color: var(--muted); padding: 2rem 0; }
+        .ai-loading .spinner { display: inline-block; }
     </style>
 </head>
 <body>
@@ -133,11 +156,44 @@
             </label>
         </div>
 
+        <details class="llm-panel" id="llm-panel">
+            <summary>LLM Configuration (optional — AI-powered report)</summary>
+            <div class="fields">
+                <label>
+                    Provider
+                    <select id="llm-provider">
+                        <option value="">None (use built-in report only)</option>
+                        <option value="ollama">Ollama (local)</option>
+                        <option value="openai">OpenAI (ChatGPT)</option>
+                        <option value="gemini">Google Gemini</option>
+                    </select>
+                </label>
+                <label>
+                    Model
+                    <input type="text" id="llm-model" placeholder="e.g. llama3, gpt-4o, gemini-2.0-flash">
+                </label>
+                <label>
+                    API Key
+                    <input type="password" id="llm-apikey" placeholder="Not needed for Ollama">
+                </label>
+                <label>
+                    Endpoint (optional override)
+                    <input type="text" id="llm-endpoint" placeholder="Leave blank for default">
+                </label>
+                <div class="hint">
+                    <b>Ollama:</b> runs locally, no key needed, default endpoint http://localhost:11434 &nbsp;|&nbsp;
+                    <b>OpenAI:</b> requires API key from platform.openai.com &nbsp;|&nbsp;
+                    <b>Gemini:</b> requires API key from aistudio.google.com
+                </div>
+            </div>
+        </details>
+
         <div class="actions">
             <button class="btn-primary" id="btn-compare" disabled>Compare</button>
             <div class="spinner" id="spinner"></div>
             <button class="btn-secondary" id="btn-export-diff" disabled>Export Diff File</button>
             <button class="btn-secondary" id="btn-export-report" disabled>Export Report (.md)</button>
+            <button class="btn-secondary" id="btn-export-ai-report" disabled>Export AI Report (.md)</button>
         </div>
 
         <div id="results">
@@ -147,11 +203,13 @@
                 <div class="tab active" data-tab="side-by-side">Side-by-Side</div>
                 <div class="tab" data-tab="unified">Unified Diff</div>
                 <div class="tab" data-tab="report">Report</div>
+                <div class="tab" data-tab="ai-report">AI Report</div>
             </div>
 
             <div class="tab-content active" id="tab-side-by-side"></div>
             <div class="tab-content" id="tab-unified"></div>
             <div class="tab-content" id="tab-report"></div>
+            <div class="tab-content" id="tab-ai-report"></div>
         </div>
     </div>
 
@@ -165,10 +223,25 @@ const nameB = document.getElementById("name-b");
 const btnCompare = document.getElementById("btn-compare");
 const btnDiff = document.getElementById("btn-export-diff");
 const btnReport = document.getElementById("btn-export-report");
+const btnAiReport = document.getElementById("btn-export-ai-report");
 const spinner = document.getElementById("spinner");
 const results = document.getElementById("results");
 
+const llmProvider = document.getElementById("llm-provider");
+const llmModel = document.getElementById("llm-model");
+const llmApiKey = document.getElementById("llm-apikey");
+const llmEndpoint = document.getElementById("llm-endpoint");
+
 let compareResult = null;
+let aiReportText = null;
+
+// Set sensible model defaults when provider changes
+llmProvider.addEventListener("change", () => {
+    const defaults = { ollama: "llama3", openai: "gpt-4o", gemini: "gemini-2.0-flash" };
+    if (!llmModel.value && defaults[llmProvider.value]) {
+        llmModel.value = defaults[llmProvider.value];
+    }
+});
 
 function setupZone(zone, input, nameEl) {
     ["dragover", "dragenter"].forEach(e => zone.addEventListener(e, ev => { ev.preventDefault(); zone.classList.add("dragover"); }));
@@ -224,10 +297,19 @@ btnCompare.addEventListener("click", async () => {
         const data = await resp.json();
         if (!resp.ok) { alert(data.error || "Comparison failed."); return; }
         compareResult = data;
+        aiReportText = null;
         renderResults(data);
         results.style.display = "block";
         btnDiff.disabled = false;
         btnReport.disabled = false;
+
+        // If an LLM provider is selected, request AI report in background
+        if (llmProvider.value) {
+            requestAiReport(data);
+        } else {
+            document.getElementById("tab-ai-report").innerHTML =
+                '<div class="report" style="color:var(--muted);padding:2rem 0;">Configure an LLM provider above and re-run the comparison to generate an AI-powered report.</div>';
+        }
     } catch (e) {
         alert("Request failed: " + e.message);
     } finally {
@@ -235,6 +317,42 @@ btnCompare.addEventListener("click", async () => {
         spinner.style.display = "none";
     }
 });
+
+async function requestAiReport(data) {
+    const aiTab = document.getElementById("tab-ai-report");
+    aiTab.innerHTML = '<div class="ai-loading"><div class="spinner" style="display:inline-block"></div> Generating AI report&hellip; this may take a moment.</div>';
+    btnAiReport.disabled = true;
+
+    const config = {};
+    if (llmModel.value) config.model = llmModel.value;
+    if (llmApiKey.value) config.api_key = llmApiKey.value;
+    if (llmEndpoint.value) config.endpoint = llmEndpoint.value;
+
+    try {
+        const resp = await fetch("/api/llm-report", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                provider: llmProvider.value,
+                config,
+                unified_diff: data.unified_diff,
+                stats: data.stats,
+                name_a: data.name_a,
+                name_b: data.name_b,
+            }),
+        });
+        const result = await resp.json();
+        if (!resp.ok) {
+            aiTab.innerHTML = `<div class="report" style="color:var(--red);">LLM Error: ${esc(result.error || "Unknown error")}</div>`;
+            return;
+        }
+        aiReportText = result.report;
+        aiTab.innerHTML = `<div class="report">${renderMarkdown(result.report)}</div>`;
+        btnAiReport.disabled = false;
+    } catch (e) {
+        aiTab.innerHTML = `<div class="report" style="color:var(--red);">Request failed: ${esc(e.message)}</div>`;
+    }
+}
 
 function renderResults(data) {
     // Stats
@@ -312,6 +430,11 @@ btnDiff.addEventListener("click", () => {
 btnReport.addEventListener("click", () => {
     if (!compareResult) return;
     download(compareResult.report, "comparison-report.md", "text/markdown");
+});
+
+btnAiReport.addEventListener("click", () => {
+    if (!aiReportText) return;
+    download(aiReportText, "ai-comparison-report.md", "text/markdown");
 });
 
 function download(content, filename, type) {
