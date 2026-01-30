@@ -331,8 +331,8 @@ const llmApiKey = document.getElementById("llm-apikey");
 const llmEndpoint = document.getElementById("llm-endpoint");
 
 let compareResult = null;   // Last comparison response from /api/compare
-let changedPagesA = new Set(); // Pages with diffs in Doc A
-let changedPagesB = new Set(); // Pages with diffs in Doc B
+let changedPagesA = new Set(); // Page numbers in Doc A that contain diffs (used for PDF preview indicators)
+let changedPagesB = new Set(); // Page numbers in Doc B that contain diffs
 let aiReportText = null;    // Last AI report text (for export)
 let pdfBytesA = null, pdfBytesB = null;   // Raw PDF bytes cached for pdf.js rendering
 let pdfDocA = null, pdfDocB = null;       // Parsed pdf.js document objects
@@ -667,6 +667,9 @@ function renderMetadataTab(data) {
 }
 
 // ── Build sets of pages that contain diffs ───────────────────────────────────
+// Scans diff_blocks to collect page numbers where changes exist.
+// These sets drive the visual indicators (yellow border + label) in the
+// PDF preview tab so users can quickly identify modified pages.
 function buildChangedPageSets(data) {
     changedPagesA = new Set();
     changedPagesB = new Set();
@@ -730,6 +733,7 @@ async function renderPdfPage(side) {
     const info = document.getElementById(`pdf-${side}-info`);
     if (!doc || !canvas) return;
 
+    // Highlight pages that contain diffs: yellow border + "• Changes" label
     const changedPages = side === "a" ? changedPagesA : changedPagesB;
     const hasChanges = changedPages.has(pageNum);
     info.textContent = `Page ${pageNum} / ${doc.numPages}` + (hasChanges ? " \u2022 Changes" : "");

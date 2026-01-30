@@ -29,7 +29,7 @@ No test suite exists. Testing is manual via browser at http://localhost:5000.
 
 **Backend (Python/Flask):**
 - `app.py` — All API routes and core processing logic. PDF extraction via pdfplumber, line-level diff via `difflib.SequenceMatcher`, word-level sub-diffs for replace blocks, report generation.
-- `llm.py` — LLM provider abstraction (Ollama, OpenAI, Gemini) with SSRF protection and prompt truncation.
+- `llm.py` — LLM provider abstraction (Ollama, LM Studio, OpenAI, Gemini) with SSRF protection and prompt truncation.
 - `config.py` — Loads environment variables with defaults (port, debug, max upload size, LLM settings).
 
 **Frontend:**
