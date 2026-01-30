@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDFCompare</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --border: #334155;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --accent: #3b82f6;
+            --green: #22c55e;
+            --red: #ef4444;
+            --yellow: #eab308;
+            --green-bg: #052e16;
+            --red-bg: #350a0a;
+            --yellow-bg: #352a04;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+        header { padding: 1.5rem 2rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 1rem; }
+        header h1 { font-size: 1.5rem; font-weight: 700; }
+        header span { color: var(--muted); font-size: .9rem; }
+
+        .container { max-width: 1400px; margin: 0 auto; padding: 2rem; }
+
+        /* Drop zone */
+        .drop-area {
+            display: flex; gap: 2rem; margin-bottom: 2rem;
+        }
+        .drop-zone {
+            flex: 1; border: 2px dashed var(--border); border-radius: 12px;
+            padding: 3rem 1.5rem; text-align: center; cursor: pointer;
+            transition: border-color .2s, background .2s; position: relative;
+        }
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: var(--accent); background: rgba(59,130,246,.06);
+        }
+        .drop-zone.has-file { border-color: var(--green); }
+        .drop-zone input { display: none; }
+        .drop-zone h3 { margin-bottom: .5rem; }
+        .drop-zone p { color: var(--muted); font-size: .85rem; }
+        .drop-zone .filename { color: var(--green); margin-top: .5rem; font-weight: 600; word-break: break-all; }
+
+        .actions { display: flex; gap: 1rem; margin-bottom: 2rem; flex-wrap: wrap; align-items: center; }
+        button {
+            padding: .65rem 1.4rem; border: none; border-radius: 8px; font-size: .9rem;
+            cursor: pointer; font-weight: 600; transition: opacity .2s;
+        }
+        button:hover { opacity: .85; }
+        button:disabled { opacity: .4; cursor: not-allowed; }
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+
+        .spinner { display: none; width: 20px; height: 20px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Stats bar */
+        .stats {
+            display: flex; gap: 1.5rem; margin-bottom: 1.5rem; flex-wrap: wrap;
+        }
+        .stat { background: var(--surface); padding: .75rem 1.2rem; border-radius: 8px; font-size: .85rem; }
+        .stat b { display: block; font-size: 1.2rem; margin-bottom: .15rem; }
+        .stat.ins b { color: var(--green); }
+        .stat.del b { color: var(--red); }
+        .stat.mod b { color: var(--yellow); }
+
+        /* Tabs */
+        .tabs { display: flex; gap: 0; margin-bottom: 0; }
+        .tab {
+            padding: .6rem 1.2rem; background: var(--surface); border: 1px solid var(--border);
+            border-bottom: none; cursor: pointer; font-size: .85rem; color: var(--muted);
+            border-radius: 8px 8px 0 0; margin-right: -1px;
+        }
+        .tab.active { background: var(--bg); color: var(--text); font-weight: 600; }
+
+        .tab-content { display: none; border: 1px solid var(--border); border-radius: 0 8px 8px 8px; padding: 1.5rem; background: var(--bg); }
+        .tab-content.active { display: block; }
+
+        /* Side-by-side diff */
+        .diff-view { display: flex; gap: 0; font-family: 'Fira Code', 'Consolas', monospace; font-size: .82rem; line-height: 1.6; overflow-x: auto; }
+        .diff-col { flex: 1; min-width: 0; }
+        .diff-col-header { padding: .5rem .75rem; background: var(--surface); font-weight: 600; font-size: .8rem; color: var(--muted); border-bottom: 1px solid var(--border); position: sticky; top: 0; }
+        .diff-line { padding: 1px 8px; white-space: pre-wrap; word-break: break-all; min-height: 1.6em; border-bottom: 1px solid rgba(51,65,85,.3); }
+        .diff-line.equal { }
+        .diff-line.insert { background: var(--green-bg); }
+        .diff-line.delete { background: var(--red-bg); }
+        .diff-line.replace { background: var(--yellow-bg); }
+        .diff-line.empty { background: var(--surface); opacity: .4; }
+        .diff-gutter { display: inline-block; width: 3.5em; text-align: right; padding-right: .75em; color: var(--muted); user-select: none; opacity: .6; }
+
+        /* Unified diff */
+        .unified-diff { font-family: 'Fira Code', 'Consolas', monospace; font-size: .82rem; line-height: 1.6; white-space: pre-wrap; word-break: break-all; max-height: 600px; overflow: auto; }
+
+        /* Report */
+        .report { max-height: 700px; overflow: auto; line-height: 1.7; }
+        .report h1 { font-size: 1.4rem; margin-bottom: .5rem; }
+        .report h2 { font-size: 1.15rem; margin-top: 1.5rem; margin-bottom: .5rem; color: var(--accent); }
+        .report h3 { font-size: 1rem; margin-top: 1rem; margin-bottom: .4rem; }
+        .report table { border-collapse: collapse; margin: .75rem 0; width: auto; }
+        .report th, .report td { border: 1px solid var(--border); padding: .35rem .75rem; text-align: left; font-size: .85rem; }
+        .report th { background: var(--surface); }
+        .report hr { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
+        .report ul, .report ol { padding-left: 1.5rem; }
+        .report em { color: var(--muted); }
+
+        #results { display: none; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>PDFCompare</h1>
+        <span>Drop two PDFs to compare their content</span>
+    </header>
+
+    <div class="container">
+        <div class="drop-area">
+            <label class="drop-zone" id="zone-a">
+                <input type="file" accept=".pdf" id="file-a">
+                <h3>Document A (Original)</h3>
+                <p>Drag &amp; drop or click to select</p>
+                <div class="filename" id="name-a"></div>
+            </label>
+            <label class="drop-zone" id="zone-b">
+                <input type="file" accept=".pdf" id="file-b">
+                <h3>Document B (Modified)</h3>
+                <p>Drag &amp; drop or click to select</p>
+                <div class="filename" id="name-b"></div>
+            </label>
+        </div>
+
+        <div class="actions">
+            <button class="btn-primary" id="btn-compare" disabled>Compare</button>
+            <div class="spinner" id="spinner"></div>
+            <button class="btn-secondary" id="btn-export-diff" disabled>Export Diff File</button>
+            <button class="btn-secondary" id="btn-export-report" disabled>Export Report (.md)</button>
+        </div>
+
+        <div id="results">
+            <div class="stats" id="stats-bar"></div>
+
+            <div class="tabs">
+                <div class="tab active" data-tab="side-by-side">Side-by-Side</div>
+                <div class="tab" data-tab="unified">Unified Diff</div>
+                <div class="tab" data-tab="report">Report</div>
+            </div>
+
+            <div class="tab-content active" id="tab-side-by-side"></div>
+            <div class="tab-content" id="tab-unified"></div>
+            <div class="tab-content" id="tab-report"></div>
+        </div>
+    </div>
+
+<script>
+const fileA = document.getElementById("file-a");
+const fileB = document.getElementById("file-b");
+const zoneA = document.getElementById("zone-a");
+const zoneB = document.getElementById("zone-b");
+const nameA = document.getElementById("name-a");
+const nameB = document.getElementById("name-b");
+const btnCompare = document.getElementById("btn-compare");
+const btnDiff = document.getElementById("btn-export-diff");
+const btnReport = document.getElementById("btn-export-report");
+const spinner = document.getElementById("spinner");
+const results = document.getElementById("results");
+
+let compareResult = null;
+
+function setupZone(zone, input, nameEl) {
+    ["dragover", "dragenter"].forEach(e => zone.addEventListener(e, ev => { ev.preventDefault(); zone.classList.add("dragover"); }));
+    ["dragleave", "drop"].forEach(e => zone.addEventListener(e, () => zone.classList.remove("dragover")));
+    zone.addEventListener("drop", ev => {
+        ev.preventDefault();
+        const file = ev.dataTransfer.files[0];
+        if (file && file.name.toLowerCase().endsWith(".pdf")) {
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            input.files = dt.files;
+            nameEl.textContent = file.name;
+            zone.classList.add("has-file");
+            checkReady();
+        }
+    });
+    input.addEventListener("change", () => {
+        if (input.files[0]) {
+            nameEl.textContent = input.files[0].name;
+            zone.classList.add("has-file");
+            checkReady();
+        }
+    });
+}
+setupZone(zoneA, fileA, nameA);
+setupZone(zoneB, fileB, nameB);
+
+function checkReady() {
+    btnCompare.disabled = !(fileA.files[0] && fileB.files[0]);
+}
+
+// Tabs
+document.querySelectorAll(".tab").forEach(tab => {
+    tab.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+        document.querySelectorAll(".tab-content").forEach(t => t.classList.remove("active"));
+        tab.classList.add("active");
+        document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
+    });
+});
+
+btnCompare.addEventListener("click", async () => {
+    const form = new FormData();
+    form.append("pdf_a", fileA.files[0]);
+    form.append("pdf_b", fileB.files[0]);
+
+    btnCompare.disabled = true;
+    spinner.style.display = "block";
+    results.style.display = "none";
+
+    try {
+        const resp = await fetch("/api/compare", { method: "POST", body: form });
+        const data = await resp.json();
+        if (!resp.ok) { alert(data.error || "Comparison failed."); return; }
+        compareResult = data;
+        renderResults(data);
+        results.style.display = "block";
+        btnDiff.disabled = false;
+        btnReport.disabled = false;
+    } catch (e) {
+        alert("Request failed: " + e.message);
+    } finally {
+        btnCompare.disabled = false;
+        spinner.style.display = "none";
+    }
+});
+
+function renderResults(data) {
+    // Stats
+    const s = data.stats;
+    const total = s.equal + s.insert + s.delete + s.replace;
+    document.getElementById("stats-bar").innerHTML = `
+        <div class="stat"><b>${s.equal}</b>Unchanged</div>
+        <div class="stat ins"><b>+${s.insert}</b>Inserted</div>
+        <div class="stat del"><b>-${s.delete}</b>Deleted</div>
+        <div class="stat mod"><b>~${s.replace}</b>Modified</div>
+    `;
+
+    // Side-by-side
+    let leftHtml = `<div class="diff-col-header">${esc(data.name_a)}</div>`;
+    let rightHtml = `<div class="diff-col-header">${esc(data.name_b)}</div>`;
+
+    for (const block of data.diff_blocks) {
+        const maxLen = Math.max(block.left_lines.length, block.right_lines.length);
+        for (let i = 0; i < maxLen; i++) {
+            const hasLeft = i < block.left_lines.length;
+            const hasRight = i < block.right_lines.length;
+            const lnum = hasLeft ? block.left_start + i + 1 : "";
+            const rnum = hasRight ? block.right_start + i + 1 : "";
+            const lClass = !hasLeft ? "empty" : (block.tag === "equal" ? "equal" : block.tag === "delete" ? "delete" : "replace");
+            const rClass = !hasRight ? "empty" : (block.tag === "equal" ? "equal" : block.tag === "insert" ? "insert" : "replace");
+            leftHtml += `<div class="diff-line ${lClass}"><span class="diff-gutter">${lnum}</span>${hasLeft ? esc(block.left_lines[i]) : ""}</div>`;
+            rightHtml += `<div class="diff-line ${rClass}"><span class="diff-gutter">${rnum}</span>${hasRight ? esc(block.right_lines[i]) : ""}</div>`;
+        }
+    }
+    document.getElementById("tab-side-by-side").innerHTML = `<div class="diff-view"><div class="diff-col">${leftHtml}</div><div class="diff-col">${rightHtml}</div></div>`;
+
+    // Unified diff
+    document.getElementById("tab-unified").innerHTML = `<div class="unified-diff">${esc(data.unified_diff)}</div>`;
+
+    // Report (render markdown simply)
+    document.getElementById("tab-report").innerHTML = `<div class="report">${renderMarkdown(data.report)}</div>`;
+}
+
+function esc(s) {
+    const d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+function renderMarkdown(md) {
+    // Simple markdown to HTML
+    let html = esc(md);
+    html = html.replace(/^### (.+)$/gm, "<h3>$1</h3>");
+    html = html.replace(/^## (.+)$/gm, "<h2>$1</h2>");
+    html = html.replace(/^# (.+)$/gm, "<h1>$1</h1>");
+    html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
+    html = html.replace(/^---$/gm, "<hr>");
+    html = html.replace(/^\- (.+)$/gm, "<li>$1</li>");
+    html = html.replace(/^\d+\. (.+)$/gm, "<li>$1</li>");
+    // Tables
+    html = html.replace(/\|(.+)\|/g, (match) => {
+        const cells = match.split("|").filter(c => c.trim()).map(c => c.trim());
+        if (cells.every(c => /^[\-\|]+$/.test(c))) return "";
+        const tag = cells.some(c => /^\*\*/.test(c)) ? "td" : "td";
+        return "<tr>" + cells.map(c => `<${tag}>${c}</${tag}>`).join("") + "</tr>";
+    });
+    html = html.replace(/(<tr>.*<\/tr>\s*)+/gs, (m) => `<table>${m}</table>`);
+    html = html.replace(/(<li>.*<\/li>\s*)+/gs, (m) => `<ul>${m}</ul>`);
+    html = html.replace(/\n/g, "<br>");
+    return html;
+}
+
+// Exports
+btnDiff.addEventListener("click", () => {
+    if (!compareResult) return;
+    download(compareResult.unified_diff, "diff.patch", "text/plain");
+});
+
+btnReport.addEventListener("click", () => {
+    if (!compareResult) return;
+    download(compareResult.report, "comparison-report.md", "text/markdown");
+});
+
+function download(content, filename, type) {
+    const blob = new Blob([content], { type });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
+</script>
+</body>
+</html>
