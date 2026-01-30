@@ -1011,7 +1011,7 @@ btnAiPdf.addEventListener("click", () => {
     const reportContent = document.getElementById("ai-report-content");
     if (!reportContent) return;
 
-    const htmlString = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:12pt;line-height:1.7;color:#111;padding:0;margin:0;width:680px;max-width:680px;overflow-wrap:break-word;word-wrap:break-word;box-sizing:border-box;">
+    const htmlString = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:12pt;line-height:1.7;color:#111;padding:0;margin:0;width:100%;max-width:100%;overflow-wrap:break-word;word-wrap:break-word;box-sizing:border-box;">
         <style>
             * { color: #111 !important; box-sizing: border-box; }
             h1 { font-size: 18pt; margin: 18px 0 10px; border-bottom: 2px solid #333; padding-bottom: 4px; }
@@ -1037,7 +1037,7 @@ btnAiPdf.addEventListener("click", () => {
         margin: [15, 15, 15, 15],
         filename: "ai-comparison-report.pdf",
         image: { type: "jpeg", quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, scrollY: 0, windowWidth: 680 },
+        html2canvas: { scale: 2, useCORS: true, scrollY: 0, windowWidth: 794 },
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
         pagebreak: { mode: ["css", "legacy"] }
     };
