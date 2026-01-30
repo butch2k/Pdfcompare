@@ -1026,12 +1026,12 @@ btnAiPdf.addEventListener("click", () => {
             table { border-collapse: collapse; width: 100%; margin: 4px 0; }
             td, th { border: 1px solid #999; padding: 2px 5px; text-align: left; font-size: 9pt; overflow-wrap: break-word; word-wrap: break-word; max-width: 200px; }
             tr:nth-child(even) td { background: #f5f5f5 !important; }
-            br { display: block; content: ""; margin: 0; line-height: 0.4; }
-            p, li, h1, h2, h3, strong { break-inside: avoid; }
-            h1, h2, h3 { break-after: avoid; }
-            ul, ol { break-inside: avoid; }
+            .text-block { margin: 2px 0; }
         </style>
-        ${reportContent.innerHTML}
+        ${reportContent.innerHTML
+            .replace(/<br\s*\/?>\s*<br\s*\/?>/gi, '</div><div class="text-block">')
+            .replace(/^/, '<div class="text-block">')
+            .concat('</div>')}
     </div>`;
 
     const opt = {
@@ -1040,7 +1040,7 @@ btnAiPdf.addEventListener("click", () => {
         image: { type: "jpeg", quality: 0.98 },
         html2canvas: { scale: 1, useCORS: true, scrollY: 0, backgroundColor: "#ffffff" },
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        pagebreak: { mode: ["avoid-all", "css", "legacy"], avoid: ["li", "h1", "h2", "h3", "tr", "strong", ".avoid-break"] }
+        pagebreak: { mode: ["avoid-all", "css", "legacy"], avoid: [".text-block", "li", "h1", "h2", "h3", "tr", "ul", "ol"] }
     };
 
     html2pdf().set(opt).from(htmlString, "string").toPdf().get("pdf").then(function(pdf) {
