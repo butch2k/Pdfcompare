@@ -255,15 +255,15 @@
                         Provider
                         <select id="llm-provider" aria-describedby="llm-hint">
                             <option value="">None (built-in report only)</option>
-                            <option value="ollama">Ollama (local)</option>
-                            <option value="lmstudio">LM Studio (local)</option>
-                            <option value="openai">OpenAI (ChatGPT)</option>
                             <option value="anthropic">Anthropic (Claude)</option>
-                            <option value="gemini">Google Gemini</option>
-                            <option value="mistral">Mistral AI</option>
-                            <option value="groq">Groq</option>
                             <option value="deepseek">DeepSeek</option>
+                            <option value="gemini">Google Gemini</option>
+                            <option value="groq">Groq</option>
                             <option value="kimi">Kimi (Moonshot)</option>
+                            <option value="lmstudio">LM Studio (local)</option>
+                            <option value="mistral">Mistral AI</option>
+                            <option value="ollama">Ollama (local)</option>
+                            <option value="openai">OpenAI (ChatGPT)</option>
                             <option value="perplexity">Perplexity</option>
                         </select>
                     </label>
@@ -377,6 +377,7 @@ let compareResult = null;   // Last comparison response from /api/compare
 let changedPagesA = new Set(); // Page numbers in Doc A that contain diffs (used for PDF preview indicators)
 let changedPagesB = new Set(); // Page numbers in Doc B that contain diffs
 let aiReportText = null;    // Last AI report text (for export)
+let lastHistoryId = null;   // ID of most recent history entry (for AI report updates)
 let pdfBytesA = null, pdfBytesB = null;   // Raw PDF bytes cached for pdf.js rendering
 let pdfDocA = null, pdfDocB = null;       // Parsed pdf.js document objects
 let currentPageA = 1, currentPageB = 1;   // Current page index for PDF preview nav
@@ -613,6 +614,7 @@ async function requestAiReport(data) {
         btnAiReport.disabled = false;
         btnAiPdf.disabled = false;
         btnRerunAi.disabled = false;
+        updateHistoryAiReport(lastHistoryId, aiReportText);
     } catch (e) {
         aiTab.innerHTML = `<div class="report" role="alert" style="color:var(--red);">Request failed: ${esc(e.message)}</div>`;
         btnRerunAi.disabled = false;
@@ -829,7 +831,10 @@ function saveToHistory(data) {
         name_b: data.name_b,
         stats: data.stats,
         report: data.report,
+        ai_report: aiReportText,
+        unified_diff: data.unified_diff,
     };
+    lastHistoryId = entry.id;
     history.unshift(entry);
     if (history.length > MAX_HISTORY) history.length = MAX_HISTORY;
     try {
@@ -880,14 +885,24 @@ function deleteHistoryEntry(id) {
     renderHistory();
 }
 
+function updateHistoryAiReport(id, text) {
+    if (!id) return;
+    const history = getHistory();
+    const entry = history.find(h => h.id === id);
+    if (!entry) return;
+    entry.ai_report = text;
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); } catch { /* quota */ }
+}
+
 function loadFromHistory(entry) {
-    aiReportText = null;
+    aiReportText = entry.ai_report || null;
+    lastHistoryId = entry.id;
     buildChangedPageSets(entry);
     resultsEl.style.display = "block";
-    btnDiff.disabled = true;
+    btnDiff.disabled = !entry.unified_diff;
     btnReport.disabled = !entry.report;
-    btnAiReport.disabled = true;
-    btnAiPdf.disabled = true;
+    btnAiReport.disabled = !entry.ai_report;
+    btnAiPdf.disabled = !entry.ai_report;
 
     const s = entry.stats;
     document.getElementById("stats-bar").innerHTML = `
@@ -899,14 +914,15 @@ function loadFromHistory(entry) {
         </dl>
     `;
     document.getElementById("tab-side-by-side").innerHTML = '<div style="color:var(--muted);padding:2rem 0;">Side-by-side diff is not available for history entries. Re-upload the files to view full results.</div>';
-    document.getElementById("tab-unified").innerHTML = '<div style="color:var(--muted);padding:2rem 0;">Unified diff is not available for history entries.</div>';
+    document.getElementById("tab-unified").innerHTML = entry.unified_diff ? `<div class="unified-diff">${esc(entry.unified_diff)}</div>` : '<div style="color:var(--muted);padding:2rem 0;">Unified diff is not available for history entries.</div>';
     document.getElementById("tab-pdf-preview").innerHTML = '<div style="color:var(--muted);padding:2rem 0;">PDF preview is not available for history entries.</div>';
     document.getElementById("tab-metadata").innerHTML = '<div style="color:var(--muted);padding:2rem 0;">Metadata is not available for history entries.</div>';
     document.getElementById("tab-report").innerHTML = entry.report ? `<div class="report">${renderMarkdown(entry.report)}</div>` : '<div style="color:var(--muted);padding:2rem 0;">No report available.</div>';
-    document.getElementById("tab-ai-report").innerHTML = '<div style="color:var(--muted);padding:2rem 0;">AI report is not available for history entries.</div>';
+    document.getElementById("tab-ai-report").innerHTML = entry.ai_report ? `<div class="report" id="ai-report-content">${renderMarkdown(entry.ai_report)}</div>` : '<div style="color:var(--muted);padding:2rem 0;">AI report is not available for history entries. Use "Rerun AI Report" to generate one.</div>';
 
-    // Allow exporting the report from history
+    // Allow exporting the report and rerunning AI from history
     compareResult = entry;
+    btnRerunAi.disabled = !entry.unified_diff;
 }
 
 // Load history on startup
@@ -995,9 +1011,9 @@ btnAiPdf.addEventListener("click", () => {
     const reportContent = document.getElementById("ai-report-content");
     if (!reportContent) return;
 
-    const htmlString = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:12pt;line-height:1.7;color:#111;padding:0;margin:0;max-width:100%;overflow-wrap:break-word;word-wrap:break-word;box-sizing:border-box;">
+    const htmlString = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:12pt;line-height:1.7;color:#111;padding:0;margin:0;width:680px;max-width:680px;overflow-wrap:break-word;word-wrap:break-word;box-sizing:border-box;">
         <style>
-            * { color: #111 !important; }
+            * { color: #111 !important; box-sizing: border-box; }
             h1 { font-size: 18pt; margin: 18px 0 10px; border-bottom: 2px solid #333; padding-bottom: 4px; }
             h2 { font-size: 15pt; margin: 16px 0 8px; border-bottom: 1px solid #999; padding-bottom: 3px; }
             h3 { font-size: 13pt; margin: 14px 0 6px; }
@@ -1021,7 +1037,7 @@ btnAiPdf.addEventListener("click", () => {
         margin: [15, 15, 15, 15],
         filename: "ai-comparison-report.pdf",
         image: { type: "jpeg", quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, scrollY: 0, windowWidth: 794 },
+        html2canvas: { scale: 2, useCORS: true, scrollY: 0, windowWidth: 680 },
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
         pagebreak: { mode: ["css", "legacy"] }
     };
