@@ -292,6 +292,7 @@
             <div class="spinner" id="spinner" role="status" aria-label="Comparing documents"></div>
             <button class="btn-secondary" id="btn-export-diff" disabled>Export Diff</button>
             <button class="btn-secondary" id="btn-export-report" disabled>Export Report</button>
+            <button class="btn-secondary" id="btn-rerun-ai" disabled>Rerun AI Report</button>
             <button class="btn-secondary" id="btn-export-ai-report" disabled>Export AI Report</button>
             <button class="btn-secondary" id="btn-export-ai-pdf" disabled>Export PDF</button>
         </div>
@@ -346,6 +347,7 @@ const btnDiff = document.getElementById("btn-export-diff");
 const btnReport = document.getElementById("btn-export-report");
 const btnAiReport = document.getElementById("btn-export-ai-report");
 const btnAiPdf = document.getElementById("btn-export-ai-pdf");
+const btnRerunAi = document.getElementById("btn-rerun-ai");
 const spinner = document.getElementById("spinner");
 const resultsEl = document.getElementById("results");
 
@@ -393,6 +395,7 @@ function loadLlmFromStorage() {
         if (cfg.model) llmModel.value = cfg.model;
         if (cfg.apikey) llmApiKey.value = cfg.apikey;
         if (cfg.endpoint) llmEndpoint.value = cfg.endpoint;
+        if (cfg.expert_field) expertField.value = cfg.expert_field;
     } catch (_) {}
 }
 
@@ -401,7 +404,8 @@ function saveLlmToStorage() {
         provider: llmProvider.value,
         model: llmModel.value,
         apikey: llmApiKey.value,
-        endpoint: llmEndpoint.value
+        endpoint: llmEndpoint.value,
+        expert_field: expertField.value
     };
     try {
         localStorage.setItem(LLM_CONFIG_KEY, JSON.stringify(cfg));
@@ -419,6 +423,7 @@ async function clearLlmStorage() {
         llmModel.value = "";
         llmApiKey.value = "";
         llmEndpoint.value = "";
+        expertField.value = "";
         // Reload server defaults
         try {
             const resp = await fetch("/api/config");
@@ -542,7 +547,6 @@ btnCompare.addEventListener("click", async () => {
         resultsEl.focus({ preventScroll: true });
         btnDiff.disabled = false;
         btnReport.disabled = false;
-
         saveToHistory(data);
         renderHistory();
 
@@ -568,6 +572,7 @@ async function requestAiReport(data) {
     aiTab.innerHTML = '<div class="ai-loading" role="status" aria-label="Generating AI report"><div class="spinner" style="display:inline-block"></div> Generating AI report&hellip;</div>';
     btnAiReport.disabled = true;
     btnAiPdf.disabled = true;
+    btnRerunAi.disabled = true;
 
     const cfg = {};
     if (llmModel.value) cfg.model = llmModel.value;
@@ -586,6 +591,7 @@ async function requestAiReport(data) {
         aiTab.innerHTML = `<div class="report" id="ai-report-content">${renderMarkdown(result.report)}</div>`;
         btnAiReport.disabled = false;
         btnAiPdf.disabled = false;
+        btnRerunAi.disabled = false;
     } catch (e) {
         aiTab.innerHTML = `<div class="report" role="alert" style="color:var(--red);">Request failed: ${esc(e.message)}</div>`;
     }
@@ -945,29 +951,49 @@ function download(content, filename, type) {
 btnDiff.addEventListener("click", () => { if (compareResult) download(compareResult.unified_diff, "diff.patch", "text/plain"); });
 btnReport.addEventListener("click", () => { if (compareResult) download(compareResult.report, "comparison-report.md", "text/markdown"); });
 btnAiReport.addEventListener("click", () => { if (aiReportText) download(aiReportText, "ai-comparison-report.md", "text/markdown"); });
+btnRerunAi.addEventListener("click", () => {
+    if (!compareResult || !llmProvider.value) return;
+    // Switch to AI Report tab
+    document.querySelectorAll(".tab").forEach(t => t.setAttribute("aria-selected", "false"));
+    document.getElementById("tab-btn-ai-report").setAttribute("aria-selected", "true");
+    document.querySelectorAll(".tab-content").forEach(c => c.style.display = "none");
+    document.getElementById("tab-ai-report").style.display = "block";
+    requestAiReport(compareResult);
+});
 
 // Export AI report as PDF using html2pdf.js
 btnAiPdf.addEventListener("click", () => {
     const reportContent = document.getElementById("ai-report-content");
     if (!reportContent) return;
 
-    const opt = {
-        margin: [15, 15, 15, 15],
-        filename: "ai-comparison-report.pdf",
-        image: { type: "jpeg", quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        pagebreak: { mode: ["css", "legacy"] }
-    };
-
-    // Build a standalone container with explicit styling for html2canvas.
-    // It must be on-screen (html2canvas ignores off-screen elements) but
-    // we use fixed positioning behind a zero-opacity layer so the user
-    // doesn't see a flash.
+    // Build a standalone container for html2canvas.
+    // Use position:absolute far below viewport — element must be in-flow,
+    // fully opaque, and unconstrained in height for multi-page capture.
     const wrapper = document.createElement("div");
-    wrapper.style.cssText = "position:fixed;top:0;left:0;width:210mm;z-index:-1;opacity:0;pointer-events:none;background:#fff;padding:10mm;box-sizing:border-box;color:#222;font-size:12pt;line-height:1.6;overflow:visible;height:auto;max-height:none;";
+    wrapper.style.cssText = "position:absolute;top:99999px;left:0;width:794px;background:#fff;padding:40px;box-sizing:border-box;color:#222;font-family:Arial,Helvetica,sans-serif;font-size:12pt;line-height:1.6;overflow:visible;height:auto;max-height:none;";
     wrapper.innerHTML = reportContent.innerHTML;
     document.body.appendChild(wrapper);
+
+    // Use pixel-based width (794px ≈ A4 at 96dpi) and tell html2canvas
+    // the full scrollable height so nothing is clipped.
+    const opt = {
+        margin: 10,
+        filename: "ai-comparison-report.pdf",
+        image: { type: "jpeg", quality: 0.98 },
+        html2canvas: {
+            scale: 2,
+            useCORS: true,
+            scrollY: 0,
+            scrollX: 0,
+            windowWidth: 794,
+            windowHeight: wrapper.scrollHeight,
+            height: wrapper.scrollHeight,
+            width: 794
+        },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+        pagebreak: { mode: ["avoid-all", "css"] }
+    };
+
     html2pdf().set(opt).from(wrapper).save().then(() => wrapper.remove());
 });
 </script>

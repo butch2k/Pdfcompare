@@ -68,15 +68,28 @@ Then structure the report as follows:
    - Why this change matters — explain the intent and rationale where possible.
    - The practical consequences for stakeholders, operations, or compliance.
    - Any risks, ambiguities, or gaps introduced by the change.
+   - **Implications**: Explain in depth what this change means in practice. \
+     Who is affected and how? Does it create new obligations, remove protections, \
+     shift liability, change timelines, or alter scope? What are the downstream \
+     effects — on processes, on other provisions in the document, on third parties, \
+     on enforcement or interpretation? Consider both intended and unintended consequences. \
+     If the change is ambiguous, explain the range of possible interpretations and their \
+     respective implications.
 4. **Cross-Change Impact**: Analyse how multiple changes interact with each other. \
-   Do they compound risk, create inconsistencies, or strengthen the document?
+   Do they compound risk, create inconsistencies, or strengthen the document? \
+   Identify any cascading effects where one change amplifies or undermines another. \
+   Flag any contradictions between changes.
 5. **Severity Assessment**: Rate overall severity (Low / Medium / High / Critical) \
    based on how the changes affect obligations, rights, risks, or outcomes in {field}. \
    Justify the rating with specific references to the changes.
 6. **Regulatory & Legal Implications**: Highlight any changes that could alter legal, \
-   financial, regulatory, or contractual obligations specific to this domain.
+   financial, regulatory, or contractual obligations specific to this domain. \
+   Explain the compliance impact: could these changes trigger reporting requirements, \
+   affect ongoing disputes, require updated disclosures, or conflict with existing \
+   regulations or standards? Identify which jurisdictions or parties are most affected.
 7. **Recommendations**: Provide specific, actionable recommendations — not just whether \
-   to review, but what to review, who should be involved, and what to watch for.
+   to review, but what to review, who should be involved, and what to watch for. \
+   Prioritise the recommendations by urgency and impact.
 
 Do NOT report on formatting, whitespace, reordering, renumbering, or cosmetic edits. \
 Only analyse changes that affect the substance or meaning of the document. \
