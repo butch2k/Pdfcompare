@@ -394,7 +394,7 @@ const LLM_CONFIG_KEY = "pdfcompare_llm_config";
         const cfg = await resp.json();
         if (cfg.llm_provider && !llmProvider.value) llmProvider.value = cfg.llm_provider;
         if (cfg.llm_model && !llmModel.value) llmModel.value = cfg.llm_model;
-        if (cfg.llm_endpoint && !llmEndpoint.value) llmEndpoint.value = cfg.llm_endpoint;
+        if (cfg.llm_endpoint) llmEndpoint.placeholder = cfg.llm_endpoint;
         if (cfg.has_api_key) llmApiKey.placeholder = "Set via server .env";
         if (cfg.version) document.getElementById("app-version").textContent = "v" + cfg.version;
     } catch (_) {}
@@ -448,7 +448,7 @@ async function clearLlmStorage() {
                 const cfg = await resp.json();
                 if (cfg.llm_provider) llmProvider.value = cfg.llm_provider;
                 if (cfg.llm_model) llmModel.value = cfg.llm_model;
-                if (cfg.llm_endpoint) llmEndpoint.value = cfg.llm_endpoint;
+                if (cfg.llm_endpoint) llmEndpoint.placeholder = cfg.llm_endpoint;
                 if (cfg.has_api_key) llmApiKey.placeholder = "Set via server .env";
             }
         } catch (_) {}
