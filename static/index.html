@@ -897,6 +897,9 @@ function saveToHistory(data) {
         report: data.report,
         ai_report: aiReportText,
         unified_diff: data.unified_diff,
+        metadata_a: data.metadata_a,
+        metadata_b: data.metadata_b,
+        metadata_diff: data.metadata_diff,
     };
     lastHistoryId = entry.id;
     history.unshift(entry);
@@ -980,7 +983,11 @@ function loadFromHistory(entry) {
     document.getElementById("tab-side-by-side").innerHTML = '<div style="color:var(--muted);padding:2rem 0;">Side-by-side diff is not available for history entries. Re-upload the files to view full results.</div>';
     document.getElementById("tab-unified").innerHTML = entry.unified_diff ? `<div class="unified-diff">${esc(entry.unified_diff)}</div>` : '<div style="color:var(--muted);padding:2rem 0;">Unified diff is not available for history entries.</div>';
     document.getElementById("tab-pdf-preview").innerHTML = '<div style="color:var(--muted);padding:2rem 0;">PDF preview is not available for history entries.</div>';
-    document.getElementById("tab-metadata").innerHTML = '<div style="color:var(--muted);padding:2rem 0;">Metadata is not available for history entries.</div>';
+    if (entry.metadata_a && entry.metadata_b) {
+        renderMetadataTab(entry);
+    } else {
+        document.getElementById("tab-metadata").innerHTML = '<div style="color:var(--muted);padding:2rem 0;">Metadata is not available for history entries.</div>';
+    }
     document.getElementById("tab-report").innerHTML = entry.report ? `<div class="report">${renderMarkdown(entry.report)}</div>` : '<div style="color:var(--muted);padding:2rem 0;">No report available.</div>';
     document.getElementById("tab-ai-report").innerHTML = entry.ai_report ? `<div class="report" id="ai-report-content">${renderMarkdown(entry.ai_report)}</div>` : '<div style="color:var(--muted);padding:2rem 0;">AI report is not available for history entries. Use "Rerun AI Report" to generate one.</div>';
 
