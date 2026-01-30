@@ -33,18 +33,18 @@ from llm import generate_llm_report
 
 APP_VERSION = "1.0.0"
 
-def _get_build_number() -> str:
-    """Return git commit count as a build/push number, or '0' if unavailable."""
+def _get_git_short_hash() -> str:
+    """Return short git commit hash, or 'unknown' if unavailable."""
     try:
         result = subprocess.run(
-            ["git", "rev-list", "--count", "HEAD"],
+            ["git", "rev-parse", "--short", "HEAD"],
             capture_output=True, text=True, timeout=5
         )
-        return result.stdout.strip() if result.returncode == 0 else "0"
+        return result.stdout.strip() if result.returncode == 0 else "unknown"
     except Exception:
-        return "0"
+        return "unknown"
 
-BUILD_NUMBER = _get_build_number()
+GIT_HASH = _get_git_short_hash()
 
 # ---------------------------------------------------------------------------
 # App initialisation
@@ -578,7 +578,7 @@ def get_config():
         "llm_model": config.LLM_MODEL,
         "llm_endpoint": config.LLM_ENDPOINT,
         "has_api_key": bool(config.LLM_API_KEY),
-        "version": f"{APP_VERSION}-{BUILD_NUMBER}",
+        "version": f"{APP_VERSION}-{GIT_HASH}",
     })
 
 
