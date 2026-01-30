@@ -237,6 +237,7 @@
                         <select id="llm-provider" aria-describedby="llm-hint">
                             <option value="">None (built-in report only)</option>
                             <option value="ollama">Ollama (local)</option>
+                            <option value="lmstudio">LM Studio (local)</option>
                             <option value="openai">OpenAI (ChatGPT)</option>
                             <option value="gemini">Google Gemini</option>
                         </select>
@@ -415,7 +416,7 @@ function showLlmFeedback(msg, color = "var(--green)") {
 }
 
 llmProvider.addEventListener("change", () => {
-    const defaults = { ollama: "llama3", openai: "gpt-4o", gemini: "gemini-2.0-flash" };
+    const defaults = { ollama: "llama3", lmstudio: "default", openai: "gpt-4o", gemini: "gemini-2.0-flash" };
     if (!llmModel.value && defaults[llmProvider.value]) llmModel.value = defaults[llmProvider.value];
 });
 
