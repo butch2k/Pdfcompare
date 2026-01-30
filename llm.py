@@ -232,6 +232,8 @@ def _call_lmstudio(config: dict, system: str, user: str) -> str:
         ],
     }).encode()
 
+    # API key is optional — LM Studio ignores it, but some compatible
+    # servers may require one, so include it when provided.
     headers = {"Content-Type": "application/json"}
     api_key = config.get("api_key", "")
     if api_key:
