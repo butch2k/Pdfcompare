@@ -1053,7 +1053,7 @@ btnAiPdf.addEventListener("click", () => {
         margin: [15, 12, 20, 12],
         filename: "ai-comparison-report.pdf",
         image: { type: "jpeg", quality: 0.98 },
-        html2canvas: { scale: 1, useCORS: true, scrollY: 0, backgroundColor: "#ffffff" },
+        html2canvas: { scale: 0.98, useCORS: true, scrollY: 0, backgroundColor: "#ffffff" },
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
         pagebreak: { mode: ["avoid-all", "css", "legacy"], avoid: [".text-block", "li", "h1", "h2", "h3", "tr", "ul", "ol"] }
     };
