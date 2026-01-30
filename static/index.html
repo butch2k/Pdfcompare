@@ -960,20 +960,15 @@ btnAiPdf.addEventListener("click", () => {
         pagebreak: { mode: ["css", "legacy"] }
     };
 
-    // Clone content so we can style it for PDF without affecting the page
-    const clone = reportContent.cloneNode(true);
-    clone.style.padding = "0";
-    clone.style.margin = "0";
-    clone.style.color = "#222";
-    clone.style.fontSize = "12pt";
-    clone.style.lineHeight = "1.6";
-    clone.style.maxHeight = "none";
-    clone.style.overflow = "visible";
-    clone.style.height = "auto";
-    clone.style.position = "absolute";
-    clone.style.left = "-9999px";
-    document.body.appendChild(clone);
-    html2pdf().set(opt).from(clone).save().then(() => clone.remove());
+    // Build a standalone container with explicit styling for html2canvas.
+    // It must be on-screen (html2canvas ignores off-screen elements) but
+    // we use fixed positioning behind a zero-opacity layer so the user
+    // doesn't see a flash.
+    const wrapper = document.createElement("div");
+    wrapper.style.cssText = "position:fixed;top:0;left:0;width:210mm;z-index:-1;opacity:0;pointer-events:none;background:#fff;padding:10mm;box-sizing:border-box;color:#222;font-size:12pt;line-height:1.6;overflow:visible;height:auto;max-height:none;";
+    wrapper.innerHTML = reportContent.innerHTML;
+    document.body.appendChild(wrapper);
+    html2pdf().set(opt).from(wrapper).save().then(() => wrapper.remove());
 });
 </script>
 </body>

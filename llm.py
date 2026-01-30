@@ -47,6 +47,12 @@ along with summary statistics. Focus exclusively on substantive content changes 
 deletions, and modifications of meaning, provisions, data, or requirements. \
 Ignore formatting, layout, whitespace, numbering, punctuation, and stylistic changes entirely.
 
+IMPORTANT: When the same type of change repeats many times (e.g. a year update on every page, \
+a copyright notice change, or a recurring header/footer edit), group them into a single mention. \
+State what changed, note it occurs throughout the document (e.g. "across all pages" or \
+"approximately N occurrences"), and move on. Never list individual line numbers for repetitive \
+changes — a representative example with one or two line references is sufficient.
+
 Produce a thorough, in-depth Markdown report. Begin with a header line:
 
 **Expert analysis by: {field} specialist** ({detection_note})
