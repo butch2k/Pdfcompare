@@ -950,7 +950,12 @@ function download(content, filename, type) {
 // ── Export buttons ──────────────────────────────────────────────────────────
 btnDiff.addEventListener("click", () => { if (compareResult) download(compareResult.unified_diff, "diff.patch", "text/plain"); });
 btnReport.addEventListener("click", () => { if (compareResult) download(compareResult.report, "comparison-report.md", "text/markdown"); });
-btnAiReport.addEventListener("click", () => { if (aiReportText) download(aiReportText, "ai-comparison-report.md", "text/markdown"); });
+btnAiReport.addEventListener("click", () => {
+    if (!aiReportText) return;
+    // Strip outer markdown code fence if present
+    const cleaned = aiReportText.replace(/^```(?:markdown)?\s*\n?/i, "").replace(/\n?```\s*$/, "");
+    download(cleaned, "ai-comparison-report.md", "text/markdown");
+});
 btnRerunAi.addEventListener("click", () => {
     if (!compareResult || !llmProvider.value) return;
     // Switch to AI Report tab
@@ -962,39 +967,41 @@ btnRerunAi.addEventListener("click", () => {
 });
 
 // Export AI report as PDF using html2pdf.js
+// We build a standalone HTML string with embedded styles to avoid inheriting
+// the app's dark theme (which causes white-on-white text in the PDF).
 btnAiPdf.addEventListener("click", () => {
     const reportContent = document.getElementById("ai-report-content");
     if (!reportContent) return;
 
-    // Build a standalone container for html2canvas.
-    // Use position:absolute far below viewport — element must be in-flow,
-    // fully opaque, and unconstrained in height for multi-page capture.
-    const wrapper = document.createElement("div");
-    wrapper.style.cssText = "position:absolute;top:99999px;left:0;width:794px;background:#fff;padding:40px;box-sizing:border-box;color:#222;font-family:Arial,Helvetica,sans-serif;font-size:12pt;line-height:1.6;overflow:visible;height:auto;max-height:none;";
-    wrapper.innerHTML = reportContent.innerHTML;
-    document.body.appendChild(wrapper);
+    const htmlString = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:12pt;line-height:1.7;color:#111;padding:0;margin:0;">
+        <style>
+            * { color: #111 !important; }
+            h1 { font-size: 18pt; margin: 18px 0 10px; border-bottom: 2px solid #333; padding-bottom: 4px; }
+            h2 { font-size: 15pt; margin: 16px 0 8px; border-bottom: 1px solid #999; padding-bottom: 3px; }
+            h3 { font-size: 13pt; margin: 14px 0 6px; }
+            strong { font-weight: 700; }
+            em { font-style: italic; }
+            hr { border: none; border-top: 1px solid #ccc; margin: 12px 0; }
+            ul, ol { margin: 6px 0 6px 20px; padding: 0; }
+            li { margin-bottom: 4px; }
+            table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+            td, th { border: 1px solid #999; padding: 5px 8px; text-align: left; font-size: 10pt; }
+            tr:nth-child(even) { background: #f5f5f5; }
+            br { display: block; content: ""; margin-top: 2px; }
+        </style>
+        ${reportContent.innerHTML}
+    </div>`;
 
-    // Use pixel-based width (794px ≈ A4 at 96dpi) and tell html2canvas
-    // the full scrollable height so nothing is clipped.
     const opt = {
-        margin: 10,
+        margin: [15, 15, 15, 15],
         filename: "ai-comparison-report.pdf",
         image: { type: "jpeg", quality: 0.98 },
-        html2canvas: {
-            scale: 2,
-            useCORS: true,
-            scrollY: 0,
-            scrollX: 0,
-            windowWidth: 794,
-            windowHeight: wrapper.scrollHeight,
-            height: wrapper.scrollHeight,
-            width: 794
-        },
+        html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        pagebreak: { mode: ["avoid-all", "css"] }
+        pagebreak: { mode: ["css", "legacy"] }
     };
 
-    html2pdf().set(opt).from(wrapper).save().then(() => wrapper.remove());
+    html2pdf().set(opt).from(htmlString, "string").save();
 });
 </script>
 </body>

@@ -94,7 +94,16 @@ Then structure the report as follows:
 Do NOT report on formatting, whitespace, reordering, renumbering, or cosmetic edits. \
 Only analyse changes that affect the substance or meaning of the document. \
 Be precise, cite page/line numbers when possible, and use professional language. \
-Provide the depth of analysis expected from a seasoned professional in {field}.\
+Provide the depth of analysis expected from a seasoned professional in {field}.
+
+CRITICAL FORMATTING RULES — you MUST follow these exactly:
+- Use EXACTLY the 7 numbered section headings listed above (Subject Matter & Context, \
+  Executive Summary, Detailed Change Analysis, Cross-Change Impact, Severity Assessment, \
+  Regulatory & Legal Implications, Recommendations). Do NOT invent your own headings.
+- Start the report with the "Expert analysis by" header line as specified.
+- NEVER list more than 3 line/page references for any single change. For repetitive \
+  changes, write "e.g. lines 1-5" and state the total count. Do NOT enumerate every occurrence.
+- Do NOT wrap your response in markdown code fences (```). Output plain Markdown directly.\
 """
 
 
