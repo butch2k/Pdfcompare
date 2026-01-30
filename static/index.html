@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PDFCompare</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min.mjs" type="module"></script>
     <style>
         :root {
             --bg: #0f172a;
@@ -174,7 +173,11 @@
         }
         .history-list li:hover { background: var(--surface); }
         .history-list li .hist-date { color: var(--muted); font-size: .72rem; }
-        .history-list li .hist-del { color: var(--red); cursor: pointer; font-weight: 700; padding: 0 .3rem; }
+        .history-list li .hist-del {
+            color: var(--red); cursor: pointer; font-weight: 700; padding: 0 .3rem;
+            background: none; border: none; font-size: inherit; line-height: 1;
+        }
+        .history-list li .hist-del:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
         /* AI report tab */
         .ai-loading { display: flex; align-items: center; gap: .75rem; color: var(--muted); padding: 2rem 0; }
@@ -570,20 +573,20 @@ function renderPdfPreviewTab() {
             <div class="pdf-preview-col">
                 <h4>Document A</h4>
                 <div class="pdf-nav">
-                    <button class="btn-secondary btn-sm" id="pdf-a-prev">Prev</button>
+                    <button class="btn-secondary btn-sm" id="pdf-a-prev" aria-label="Previous page, Document A">Prev</button>
                     <span id="pdf-a-info">Page 1</span>
-                    <button class="btn-secondary btn-sm" id="pdf-a-next">Next</button>
+                    <button class="btn-secondary btn-sm" id="pdf-a-next" aria-label="Next page, Document A">Next</button>
                 </div>
-                <div class="pdf-canvas-wrap"><canvas id="pdf-canvas-a"></canvas></div>
+                <div class="pdf-canvas-wrap"><canvas id="pdf-canvas-a" aria-label="PDF preview of Document A" role="img"></canvas></div>
             </div>
             <div class="pdf-preview-col">
                 <h4>Document B</h4>
                 <div class="pdf-nav">
-                    <button class="btn-secondary btn-sm" id="pdf-b-prev">Prev</button>
+                    <button class="btn-secondary btn-sm" id="pdf-b-prev" aria-label="Previous page, Document B">Prev</button>
                     <span id="pdf-b-info">Page 1</span>
-                    <button class="btn-secondary btn-sm" id="pdf-b-next">Next</button>
+                    <button class="btn-secondary btn-sm" id="pdf-b-next" aria-label="Next page, Document B">Next</button>
                 </div>
-                <div class="pdf-canvas-wrap"><canvas id="pdf-canvas-b"></canvas></div>
+                <div class="pdf-canvas-wrap"><canvas id="pdf-canvas-b" aria-label="PDF preview of Document B" role="img"></canvas></div>
             </div>
         </div>
     `;
@@ -633,6 +636,11 @@ function getHistory() {
 
 function saveToHistory(data) {
     const history = getHistory();
+    // Strip word_diffs from blocks to reduce localStorage size
+    const lightBlocks = data.diff_blocks.map(b => {
+        const { word_diffs, ...rest } = b;
+        return rest;
+    });
     const entry = {
         id: Date.now(),
         date: new Date().toISOString(),
@@ -641,7 +649,7 @@ function saveToHistory(data) {
         stats: data.stats,
         unified_diff: data.unified_diff,
         report: data.report,
-        diff_blocks: data.diff_blocks,
+        diff_blocks: lightBlocks,
         metadata_a: data.metadata_a,
         metadata_b: data.metadata_b,
         metadata_diff: data.metadata_diff,
@@ -661,11 +669,11 @@ function renderHistory() {
         const label = `${h.name_a} vs ${h.name_b}`;
         const dateStr = d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         const changed = h.stats.insert + h.stats.delete + h.stats.replace;
-        return `<li data-id="${h.id}"><div><strong>${esc(label)}</strong><br><span class="hist-date">${dateStr} — ${changed} change(s)</span></div><span class="hist-del" data-del="${h.id}" title="Remove">&times;</span></li>`;
+        return `<li data-id="${h.id}" tabindex="0" role="button" aria-label="Load comparison: ${esc(label)}"><div><strong>${esc(label)}</strong><br><span class="hist-date">${dateStr} — ${changed} change(s)</span></div><button class="hist-del" data-del="${h.id}" title="Remove from history" aria-label="Remove ${esc(label)}">&times;</button></li>`;
     }).join("");
 
     list.querySelectorAll("li[data-id]").forEach(li => {
-        li.addEventListener("click", ev => {
+        function handleActivate(ev) {
             if (ev.target.classList.contains("hist-del")) {
                 deleteHistoryEntry(parseInt(ev.target.dataset.del));
                 return;
@@ -673,6 +681,10 @@ function renderHistory() {
             const id = parseInt(li.dataset.id);
             const entry = getHistory().find(h => h.id === id);
             if (entry) { loadFromHistory(entry); }
+        }
+        li.addEventListener("click", handleActivate);
+        li.addEventListener("keydown", ev => {
+            if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); handleActivate(ev); }
         });
     });
 }

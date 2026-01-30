@@ -19,22 +19,16 @@ logger = logging.getLogger(__name__)
 PAGE_MARKER_PREFIX = "\x00PAGE:"
 
 
-def extract_text(pdf_bytes: bytes) -> list[str]:
-    """Extract text from a PDF, returning a list of lines with page markers."""
+def extract_text_and_metadata(pdf_bytes: bytes) -> tuple[list[str], dict]:
+    """Extract text and metadata from a PDF in a single pass."""
     lines = []
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         for page in pdf.pages:
             lines.append(f"{PAGE_MARKER_PREFIX}{page.page_number}")
             text = page.extract_text() or ""
             lines.extend(text.splitlines())
-    return lines
-
-
-def extract_metadata(pdf_bytes: bytes) -> dict:
-    """Extract PDF metadata fields."""
-    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         meta = pdf.metadata or {}
-        return {
+        metadata = {
             "title": meta.get("Title", "") or "",
             "author": meta.get("Author", "") or "",
             "subject": meta.get("Subject", "") or "",
@@ -44,6 +38,7 @@ def extract_metadata(pdf_bytes: bytes) -> dict:
             "mod_date": meta.get("ModDate", "") or "",
             "page_count": len(pdf.pages),
         }
+    return lines, metadata
 
 
 def _is_page_marker(line: str) -> bool:
@@ -54,12 +49,15 @@ def _page_number_from_marker(line: str) -> int:
     return int(line[len(PAGE_MARKER_PREFIX):])
 
 
-def _line_to_page(lines: list[str], line_idx: int) -> int:
-    """Walk backwards from line_idx to find the nearest page marker."""
-    for i in range(line_idx, -1, -1):
-        if _is_page_marker(lines[i]):
-            return _page_number_from_marker(lines[i])
-    return 1
+def _build_page_index(lines: list[str]) -> list[int]:
+    """Build a list mapping each line index to its page number."""
+    page_index = []
+    current_page = 1
+    for line in lines:
+        if _is_page_marker(line):
+            current_page = _page_number_from_marker(line)
+        page_index.append(current_page)
+    return page_index
 
 
 def apply_ignore_rules(lines: list[str], ignore_options: dict) -> list[str]:
@@ -76,9 +74,11 @@ def apply_ignore_rules(lines: list[str], ignore_options: dict) -> list[str]:
         if ignore_options.get("ignore_pattern"):
             try:
                 pattern = ignore_options["ignore_pattern"]
-                if re.fullmatch(pattern, line):
+                if len(pattern) > 500:
+                    pass  # reject overly long patterns
+                elif re.fullmatch(pattern, line, flags=0):
                     continue
-            except re.error:
+            except (re.error, TimeoutError):
                 pass  # invalid regex, skip filtering
         if ignore_options.get("ignore_headers_footers"):
             stripped = line.strip()
@@ -93,6 +93,10 @@ def apply_ignore_rules(lines: list[str], ignore_options: dict) -> list[str]:
 
 def compute_diff(lines_a: list[str], lines_b: list[str]):
     """Return structured diff information, skipping page markers from output."""
+    # Pre-compute page index for O(1) lookups
+    page_index_a = _build_page_index(lines_a)
+    page_index_b = _build_page_index(lines_b)
+
     # Build content-only lists for diffing, but keep page mapping
     content_a = [(i, l) for i, l in enumerate(lines_a) if not _is_page_marker(l)]
     content_b = [(i, l) for i, l in enumerate(lines_b) if not _is_page_marker(l)]
@@ -100,7 +104,7 @@ def compute_diff(lines_a: list[str], lines_b: list[str]):
     text_a = [l for _, l in content_a]
     text_b = [l for _, l in content_b]
 
-    matcher = difflib.SequenceMatcher(None, text_a, text_b)
+    matcher = difflib.SequenceMatcher(None, text_a, text_b, autojunk=False)
     opcodes = matcher.get_opcodes()
 
     diff_blocks = []
@@ -116,8 +120,8 @@ def compute_diff(lines_a: list[str], lines_b: list[str]):
             word_diffs = compute_word_diffs(left_lines_text, right_lines_text)
 
         # Map content indices back to original indices for page lookup
-        left_page = _line_to_page(lines_a, content_a[i1][0]) if i1 < len(content_a) else None
-        right_page = _line_to_page(lines_b, content_b[j1][0]) if j1 < len(content_b) else None
+        left_page = page_index_a[content_a[i1][0]] if i1 < len(content_a) else None
+        right_page = page_index_b[content_b[j1][0]] if j1 < len(content_b) else None
 
         block = {
             "tag": tag,
@@ -402,10 +406,8 @@ def compare():
     }
 
     try:
-        lines_a = extract_text(bytes_a)
-        lines_b = extract_text(bytes_b)
-        meta_a = extract_metadata(bytes_a)
-        meta_b = extract_metadata(bytes_b)
+        lines_a, meta_a = extract_text_and_metadata(bytes_a)
+        lines_b, meta_b = extract_text_and_metadata(bytes_b)
     except Exception:
         logger.exception("PDF text extraction failed")
         return jsonify({"error": "Failed to extract text from one or both PDFs."}), 422
