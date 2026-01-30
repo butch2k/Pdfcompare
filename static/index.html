@@ -965,7 +965,7 @@ function renderMarkdown(md) {
     html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
     html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
     html = html.replace(/^---$/gm, "<hr>");
-    html = html.replace(/^\- (.+)$/gm, "<li>$1</li>");
+    html = html.replace(/^\s*\- (.+)$/gm, "<li>$1</li>");
     html = html.replace(/^\d+\. (.+)$/gm, "<li>$1</li>");
     html = html.replace(/\|(.+)\|/g, (match) => {
         const cells = match.split("|").filter(c => c.trim()).map(c => c.trim());
