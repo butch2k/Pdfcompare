@@ -3,6 +3,7 @@
 import json
 import urllib.request
 import urllib.error
+from urllib.parse import urlparse
 
 
 SYSTEM_PROMPT = """\
@@ -18,6 +19,25 @@ along with summary statistics. Your task is to produce a detailed Markdown repor
 
 Be precise, cite line numbers when possible, and use professional language.\
 """
+
+_ALLOWED_SCHEMES = {"http", "https"}
+_BLOCKED_HOSTS = {
+    "169.254.169.254",  # AWS metadata
+    "metadata.google.internal",  # GCP metadata
+    "100.100.100.200",  # Alibaba metadata
+}
+
+
+def _validate_endpoint(url: str) -> None:
+    """Block SSRF attempts against cloud metadata and internal services."""
+    parsed = urlparse(url)
+    if parsed.scheme not in _ALLOWED_SCHEMES:
+        raise ValueError(f"Endpoint scheme must be http or https, got {parsed.scheme!r}")
+    hostname = parsed.hostname or ""
+    if hostname in _BLOCKED_HOSTS:
+        raise ValueError("This endpoint address is not allowed")
+    if hostname.startswith("0") or hostname == "[::]":
+        raise ValueError("This endpoint address is not allowed")
 
 
 def _build_user_prompt(unified_diff: str, stats: dict, name_a: str, name_b: str) -> str:
@@ -37,8 +57,11 @@ def _build_user_prompt(unified_diff: str, stats: dict, name_a: str, name_b: str)
 # ── Provider implementations ────────────────────────────────────────────────
 
 def _call_ollama(config: dict, system: str, user: str) -> str:
-    """Call a local Ollama server (OpenAI-compatible /api/chat endpoint)."""
-    url = config.get("endpoint", "http://localhost:11434").rstrip("/") + "/api/chat"
+    """Call a local Ollama server (/api/chat endpoint)."""
+    base = config.get("endpoint", "http://localhost:11434").rstrip("/")
+    url = base + "/api/chat"
+    _validate_endpoint(url)
+
     body = json.dumps({
         "model": config.get("model", "llama3"),
         "messages": [
@@ -58,6 +81,8 @@ def _call_openai(config: dict, system: str, user: str) -> str:
     """Call the OpenAI Chat Completions API."""
     api_key = config.get("api_key", "")
     url = config.get("endpoint", "https://api.openai.com/v1/chat/completions")
+    _validate_endpoint(url)
+
     body = json.dumps({
         "model": config.get("model", "gpt-4o"),
         "messages": [
@@ -79,17 +104,21 @@ def _call_gemini(config: dict, system: str, user: str) -> str:
     """Call the Google Gemini (Generative Language) API."""
     api_key = config.get("api_key", "")
     model = config.get("model", "gemini-2.0-flash")
-    url = (
-        config.get("endpoint",
-                    f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent")
-        + f"?key={api_key}"
+    url = config.get(
+        "endpoint",
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
     )
+    _validate_endpoint(url)
+
     body = json.dumps({
         "system_instruction": {"parts": [{"text": system}]},
         "contents": [{"parts": [{"text": user}]}],
     }).encode()
 
-    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(url, data=body, headers={
+        "Content-Type": "application/json",
+        "x-goog-api-key": api_key,
+    })
     with urllib.request.urlopen(req, timeout=300) as resp:
         data = json.loads(resp.read())
     return data["candidates"][0]["content"]["parts"][0]["text"]

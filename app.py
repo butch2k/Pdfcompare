@@ -1,11 +1,9 @@
-import os
 import io
-import json
 import difflib
-import tempfile
+import logging
 from datetime import datetime
 
-from flask import Flask, request, jsonify, send_from_directory, send_file
+from flask import Flask, request, jsonify, send_from_directory
 import pdfplumber
 
 from llm import generate_llm_report
@@ -13,7 +11,7 @@ from llm import generate_llm_report
 app = Flask(__name__, static_folder="static")
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB
 
-UPLOAD_DIR = tempfile.mkdtemp(prefix="pdfcompare_")
+logger = logging.getLogger(__name__)
 
 
 def extract_text(pdf_bytes: bytes) -> list[str]:
@@ -208,6 +206,14 @@ def generate_report(diff_blocks, stats, name_a, name_b):
     return "\n".join(lines)
 
 
+def _safe_filename(file_storage) -> str:
+    """Return a safe display name for an uploaded file."""
+    name = file_storage.filename
+    if not name:
+        return "unnamed.pdf"
+    return name
+
+
 # ── API Routes ──────────────────────────────────────────────────────────────
 
 @app.route("/")
@@ -223,7 +229,10 @@ def compare():
     pdf_a = request.files["pdf_a"]
     pdf_b = request.files["pdf_b"]
 
-    if not pdf_a.filename.lower().endswith(".pdf") or not pdf_b.filename.lower().endswith(".pdf"):
+    name_a = _safe_filename(pdf_a)
+    name_b = _safe_filename(pdf_b)
+
+    if not name_a.lower().endswith(".pdf") or not name_b.lower().endswith(".pdf"):
         return jsonify({"error": "Both files must be PDFs."}), 400
 
     bytes_a = pdf_a.read()
@@ -232,20 +241,21 @@ def compare():
     try:
         lines_a = extract_text(bytes_a)
         lines_b = extract_text(bytes_b)
-    except Exception as e:
-        return jsonify({"error": f"Failed to extract text: {e}"}), 422
+    except Exception:
+        logger.exception("PDF text extraction failed")
+        return jsonify({"error": "Failed to extract text from one or both PDFs."}), 422
 
     diff_blocks, stats = compute_diff(lines_a, lines_b)
-    unified = generate_unified_diff(lines_a, lines_b, pdf_a.filename, pdf_b.filename)
-    report = generate_report(diff_blocks, stats, pdf_a.filename, pdf_b.filename)
+    unified = generate_unified_diff(lines_a, lines_b, name_a, name_b)
+    report = generate_report(diff_blocks, stats, name_a, name_b)
 
     return jsonify({
         "diff_blocks": diff_blocks,
         "stats": stats,
         "unified_diff": unified,
         "report": report,
-        "name_a": pdf_a.filename,
-        "name_b": pdf_b.filename,
+        "name_a": name_a,
+        "name_b": name_b,
     })
 
 
@@ -273,8 +283,11 @@ def llm_report():
             name_a=data["name_a"],
             name_b=data["name_b"],
         )
-    except Exception as e:
-        return jsonify({"error": f"LLM request failed: {e}"}), 502
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception:
+        logger.exception("LLM report generation failed")
+        return jsonify({"error": "LLM request failed. Check provider settings and try again."}), 502
 
     return jsonify({"report": report})
 
