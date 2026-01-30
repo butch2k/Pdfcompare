@@ -447,13 +447,11 @@ def generate_report(diff_blocks, stats, name_a, name_b):
                       "This may represent additional clauses, information, or context that changes "
                       "the scope or meaning of the document.")
         lines.append("")
-        for i, b in enumerate(additions[:10], 1):
+        for i, b in enumerate(additions, 1):
             preview = " ".join(b["right_lines"][:3])
             if len(preview) > 200:
                 preview = preview[:200] + "…"
             lines.append(f"{i}. Near line {b['right_start'] + 1}{_page_label(b, 'right')}: *\"{preview}\"*")
-        if len(additions) > 10:
-            lines.append(f"   *(and {len(additions) - 10} more…)*")
         lines.append("")
 
     # --- Removed content ---
@@ -464,13 +462,11 @@ def generate_report(diff_blocks, stats, name_a, name_b):
                       "Removed text may eliminate obligations, rights, definitions, or "
                       "qualifications that previously applied.")
         lines.append("")
-        for i, b in enumerate(deletions[:10], 1):
+        for i, b in enumerate(deletions, 1):
             preview = " ".join(b["left_lines"][:3])
             if len(preview) > 200:
                 preview = preview[:200] + "…"
             lines.append(f"{i}. Near line {b['left_start'] + 1}{_page_label(b, 'left')}: *\"{preview}\"*")
-        if len(deletions) > 10:
-            lines.append(f"   *(and {len(deletions) - 10} more…)*")
         lines.append("")
 
     # --- Modified content ---
@@ -481,7 +477,7 @@ def generate_report(diff_blocks, stats, name_a, name_b):
                       "change meaning, adjust figures, update references, or shift the tone "
                       "of the document.")
         lines.append("")
-        for i, b in enumerate(modifications[:10], 1):
+        for i, b in enumerate(modifications, 1):
             old_preview = " ".join(b["left_lines"][:2])
             new_preview = " ".join(b["right_lines"][:2])
             if len(old_preview) > 150:
@@ -491,8 +487,6 @@ def generate_report(diff_blocks, stats, name_a, name_b):
             lines.append(f"{i}. Line {b['left_start'] + 1}{_page_label(b, 'left')}:")
             lines.append(f"   - **Was:** *\"{old_preview}\"*")
             lines.append(f"   - **Now:** *\"{new_preview}\"*")
-        if len(modifications) > 10:
-            lines.append(f"   *(and {len(modifications) - 10} more…)*")
         lines.append("")
 
     # --- Consequences ---
