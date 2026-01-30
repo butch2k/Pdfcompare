@@ -55,6 +55,21 @@ app.config["MAX_CONTENT_LENGTH"] = config.MAX_UPLOAD_MB * 1024 * 1024
 
 logger = logging.getLogger(__name__)
 
+
+@app.after_request
+def add_security_headers(response):
+    """Add Content Security Policy header to all responses."""
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' https://cdnjs.cloudflare.com 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "connect-src 'self'; "
+        "img-src 'self' data: blob:; "
+        "worker-src blob:; "
+        "font-src 'self'"
+    )
+    return response
+
 def _check_origin():
     """Lightweight CSRF check: verify Origin or Referer on POST requests."""
     from urllib.parse import urlparse
@@ -121,16 +136,30 @@ def extract_text_and_metadata(pdf_bytes: bytes) -> tuple[list[str], dict]:
 
         meta = pdf.metadata or {}
         metadata = {
-            "title": meta.get("Title", "") or "",
-            "author": meta.get("Author", "") or "",
-            "subject": meta.get("Subject", "") or "",
-            "creator": meta.get("Creator", "") or "",
-            "producer": meta.get("Producer", "") or "",
-            "creation_date": meta.get("CreationDate", "") or "",
-            "mod_date": meta.get("ModDate", "") or "",
+            "title": _sanitize_metadata_value(meta.get("Title", "") or ""),
+            "author": _sanitize_metadata_value(meta.get("Author", "") or ""),
+            "subject": _sanitize_metadata_value(meta.get("Subject", "") or ""),
+            "creator": _sanitize_metadata_value(meta.get("Creator", "") or ""),
+            "producer": _sanitize_metadata_value(meta.get("Producer", "") or ""),
+            "creation_date": _sanitize_metadata_value(meta.get("CreationDate", "") or ""),
+            "mod_date": _sanitize_metadata_value(meta.get("ModDate", "") or ""),
             "page_count": len(pdf.pages),
         }
     return lines, metadata
+
+
+def _sanitize_metadata_value(value) -> str:
+    """Strip potentially dangerous characters from PDF metadata.
+
+    Removes HTML-like tags and null bytes to prevent XSS and injection.
+    """
+    if not isinstance(value, str):
+        value = str(value)
+    # Strip null bytes
+    value = value.replace('\x00', '')
+    # Strip angle brackets to prevent HTML/XML injection
+    value = value.replace('<', '').replace('>', '')
+    return value
 
 
 # ---------------------------------------------------------------------------

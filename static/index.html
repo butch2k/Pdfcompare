@@ -11,7 +11,7 @@
             --surface: #1e293b;
             --border: #334155;
             --text: #e2e8f0;
-            --muted: #94a3b8;
+            --muted: #a0aec0;
             --accent: #3b82f6;
             --green: #22c55e;
             --red: #ef4444;
@@ -27,7 +27,7 @@
             position: absolute; left: -9999px; top: 0; z-index: 100;
             background: var(--accent); color: #fff; padding: .5rem 1rem; border-radius: 0 0 6px 0;
         }
-        a.skip-link:focus { left: 0; }
+        a.skip-link:focus { left: 0; top: 0; width: auto; height: auto; z-index: 10000; background: var(--accent); color: #000; padding: 8px 16px; }
 
         header { padding: 1rem 2rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 1rem; }
         header h1 { font-size: 1.5rem; font-weight: 700; }
@@ -107,7 +107,7 @@
             border-bottom: none; cursor: pointer; font-size: .82rem; color: var(--muted);
             border-radius: 8px 8px 0 0; margin-right: -1px;
         }
-        .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; z-index: 1; }
+        .tab:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; z-index: 1; }
         .tab[aria-selected="true"] { background: var(--bg); color: var(--text); font-weight: 600; }
 
         .tab-content { display: none; border: 1px solid var(--border); border-radius: 0 8px 8px 8px; padding: 1.25rem; background: var(--bg); }
@@ -153,6 +153,7 @@
         .pdf-preview-col { flex: 1; min-width: 0; text-align: center; }
         .pdf-preview-col h4 { font-size: .82rem; color: var(--muted); margin-bottom: .5rem; }
         .pdf-nav { display: flex; gap: .5rem; justify-content: center; align-items: center; margin-bottom: .5rem; font-size: .8rem; }
+        .pdf-nav button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
         .pdf-canvas-wrap { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: #fff; display: flex; justify-content: center; min-height: 300px; }
         .pdf-canvas-wrap canvas { max-width: 100%; height: auto; }
 
@@ -301,7 +302,7 @@
 
         <div class="actions">
             <button class="btn-primary" id="btn-compare" disabled>Compare</button>
-            <div class="spinner" id="spinner" role="status" aria-label="Comparing documents"></div>
+            <div class="spinner" id="spinner" role="status" aria-label="Comparing documents, buttons are disabled while processing"></div>
             <button class="btn-secondary" id="btn-export-diff" disabled>Export Diff</button>
             <button class="btn-secondary" id="btn-export-report" disabled>Export Report</button>
             <button class="btn-secondary" id="btn-rerun-ai" disabled>Rerun AI Report</button>
@@ -387,6 +388,49 @@ let currentPageA = 1, currentPageB = 1;   // Current page index for PDF preview 
 // are pre-populated without the user having to re-enter them.
 // After loading server config, override with any localStorage values.
 const LLM_CONFIG_KEY = "pdfcompare_llm_config";
+const SESSION_KEY_KEY = "pdfcompare_session_key";
+
+// ── API Key Encryption ──────────────────────────────────────────────────────
+// Simple XOR-based obfuscation for API keys stored in localStorage.
+// Session key is generated once per session and stored in sessionStorage.
+function getSessionKey() {
+    let key = sessionStorage.getItem(SESSION_KEY_KEY);
+    if (!key) {
+        // Generate random 32-character hex key
+        key = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+            .map(b => b.toString(16).padStart(2, '0')).join('');
+        sessionStorage.setItem(SESSION_KEY_KEY, key);
+    }
+    return key;
+}
+
+function encryptApiKey(apiKey) {
+    if (!apiKey) return "";
+    const sessionKey = getSessionKey();
+    let encrypted = "";
+    for (let i = 0; i < apiKey.length; i++) {
+        const keyChar = sessionKey.charCodeAt(i % sessionKey.length);
+        const encryptedChar = apiKey.charCodeAt(i) ^ keyChar;
+        encrypted += encryptedChar.toString(16).padStart(4, '0');
+    }
+    return encrypted;
+}
+
+function decryptApiKey(encrypted) {
+    if (!encrypted) return "";
+    try {
+        const sessionKey = getSessionKey();
+        let decrypted = "";
+        for (let i = 0; i < encrypted.length; i += 4) {
+            const encryptedChar = parseInt(encrypted.substr(i, 4), 16);
+            const keyChar = sessionKey.charCodeAt((i / 4) % sessionKey.length);
+            decrypted += String.fromCharCode(encryptedChar ^ keyChar);
+        }
+        return decrypted;
+    } catch (_) {
+        return "";
+    }
+}
 
 (async function loadDefaults() {
     try {
@@ -413,7 +457,7 @@ function loadLlmFromStorage() {
         const cfg = JSON.parse(stored);
         if (cfg.provider) llmProvider.value = cfg.provider;
         if (cfg.model) llmModel.value = cfg.model;
-        if (cfg.apikey) llmApiKey.value = cfg.apikey;
+        if (cfg.apikey_encrypted) llmApiKey.value = decryptApiKey(cfg.apikey_encrypted);
         if (cfg.endpoint) llmEndpoint.value = cfg.endpoint;
         if (cfg.expert_field) expertField.value = cfg.expert_field;
     } catch (_) {}
@@ -423,7 +467,7 @@ function saveLlmToStorage() {
     const cfg = {
         provider: llmProvider.value,
         model: llmModel.value,
-        apikey: llmApiKey.value,
+        apikey_encrypted: encryptApiKey(llmApiKey.value),
         endpoint: llmEndpoint.value,
         expert_field: expertField.value
     };
@@ -686,8 +730,12 @@ function renderSideBySide(data) {
                 if (hasRight) rContent = renderWordSpans(wd.right_spans, "right");
             }
 
-            leftHtml += `<div class="diff-line ${lClass}"><span class="diff-gutter">${lnum}</span>${lMarker}${lContent}</div>`;
-            rightHtml += `<div class="diff-line ${rClass}"><span class="diff-gutter">${rnum}</span>${rMarker}${rContent}</div>`;
+            // Generate aria-labels for accessibility
+            const lAriaLabel = hasLeft ? `Line ${lnum}, ${block.tag === "delete" ? "deleted" : block.tag === "replace" ? "modified" : "unchanged"}` : "";
+            const rAriaLabel = hasRight ? `Line ${rnum}, ${block.tag === "insert" ? "added" : block.tag === "replace" ? "modified" : "unchanged"}` : "";
+
+            leftHtml += `<div class="diff-line ${lClass}"${lAriaLabel ? ` aria-label="${lAriaLabel}"` : ""}><span class="diff-gutter">${lnum}</span>${lMarker}${lContent}</div>`;
+            rightHtml += `<div class="diff-line ${rClass}"${rAriaLabel ? ` aria-label="${rAriaLabel}"` : ""}><span class="diff-gutter">${rnum}</span>${rMarker}${rContent}</div>`;
         }
     }
     document.getElementById("tab-side-by-side").innerHTML = `<div class="diff-view"><div class="diff-col">${leftHtml}</div><div class="diff-col">${rightHtml}</div></div>`;
