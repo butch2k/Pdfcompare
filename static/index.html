@@ -1011,14 +1011,22 @@ btnAiPdf.addEventListener("click", () => {
     const reportContent = document.getElementById("ai-report-content");
     if (!reportContent) return;
 
-    // Post-process HTML: wrap paragraphs in divs for page-break avoidance,
-    // and convert single <br> within text-blocks to proper spacing
+    // Post-process HTML for PDF: wrap paragraphs in divs for page-break avoidance
     let reportHtml = reportContent.innerHTML;
+    // Protect <ul>/<ol> blocks from being split by br replacement:
+    // temporarily replace them with placeholders
+    const listBlocks = [];
+    reportHtml = reportHtml.replace(/<(ul|ol)\b[^>]*>[\s\S]*?<\/\1>/gi, (m) => {
+        listBlocks.push(m);
+        return `<!--LIST${listBlocks.length - 1}-->`;
+    });
     // Split on double <br> (paragraph breaks) into text-block divs
     reportHtml = reportHtml.replace(/<br\s*\/?>\s*<br\s*\/?>/gi, '</div><div class="text-block">');
     reportHtml = '<div class="text-block">' + reportHtml + '</div>';
-    // Remove any remaining single <br> tags - they're now handled by block spacing
+    // Remove remaining single <br> tags outside lists
     reportHtml = reportHtml.replace(/<br\s*\/?>/gi, ' ');
+    // Restore list blocks
+    reportHtml = reportHtml.replace(/<!--LIST(\d+)-->/g, (_, i) => listBlocks[+i]);
 
     const htmlString = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:11pt;line-height:1.5;color:#222;background:#fff;padding:0;margin:0;overflow-wrap:break-word;word-wrap:break-word;box-sizing:border-box;">
         <style>
@@ -1030,8 +1038,9 @@ btnAiPdf.addEventListener("click", () => {
             strong { font-weight: 700; }
             em { font-style: italic; color: #222 !important; }
             hr { border: none; border-top: 1px solid #ccc; margin: 10px 0; }
-            ul, ol { margin: 4px 0 4px 22px; padding: 0; }
-            li { margin-bottom: 3px; line-height: 1.45; }
+            ul, ol { margin: 6px 0 6px 28px; padding: 0; list-style-type: disc; }
+            ol { list-style-type: decimal; }
+            li { margin-bottom: 4px; line-height: 1.45; padding-left: 4px; }
             table { border-collapse: collapse; width: 100%; margin: 8px 0; }
             td, th { border: 1px solid #999; padding: 4px 6px; text-align: left; font-size: 10pt; overflow-wrap: break-word; word-wrap: break-word; max-width: 200px; }
             tr:nth-child(even) td { background: #f5f5f5 !important; }
