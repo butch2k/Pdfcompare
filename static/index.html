@@ -1014,7 +1014,7 @@ btnAiPdf.addEventListener("click", () => {
     // Build a temporary off-screen element for html2pdf to render.
     // A4 at 96dpi = 794px wide; 15mm margins each side ≈ 57px each = 680px content.
     const container = document.createElement("div");
-    container.style.cssText = "position:fixed;left:0;top:0;width:680px;background:#fff;z-index:-9999;padding:0;margin:0;";
+    container.style.cssText = "position:absolute;left:-9999px;top:0;width:680px;background:#fff;padding:0;margin:0;";
     container.innerHTML = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:12pt;line-height:1.7;color:#111;padding:0;margin:0;width:680px;box-sizing:border-box;overflow-wrap:break-word;word-wrap:break-word;">
         <style>
             #pdf-export-root, #pdf-export-root * { color: #111 !important; box-sizing: border-box; }
