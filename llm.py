@@ -71,6 +71,33 @@ _BLOCKED_HOSTS = {
 }
 
 
+def _safe_llm_request(req, timeout=300):
+    """Execute an LLM HTTP request, sanitizing errors to avoid leaking API keys."""
+    try:
+        return _opener.open(req, timeout=timeout)
+    except urllib.error.HTTPError as e:
+        raise ValueError(f"LLM request failed with HTTP {e.code}") from None
+    except urllib.error.URLError as e:
+        raise ValueError(f"LLM request failed: {e.reason}") from None
+
+
+def _extract_response(data, *keys):
+    """Walk nested dict keys, raising ValueError if any key is missing."""
+    current = data
+    for key in keys:
+        if isinstance(current, list):
+            if not isinstance(key, int) or key >= len(current):
+                raise ValueError("Unexpected LLM response format")
+            current = current[key]
+        elif isinstance(current, dict):
+            if key not in current:
+                raise ValueError("Unexpected LLM response format")
+            current = current[key]
+        else:
+            raise ValueError("Unexpected LLM response format")
+    return current
+
+
 def _validate_endpoint(url: str, *, allow_local: bool = False) -> None:
     """Validate an LLM endpoint URL to block SSRF attempts.
 
@@ -81,6 +108,8 @@ def _validate_endpoint(url: str, *, allow_local: bool = False) -> None:
     (used for providers like Ollama that run on the local machine).
     """
     parsed = urlparse(url)
+    if parsed.fragment:
+        raise ValueError("Fragment identifiers are not allowed in LLM endpoint URLs")
     if parsed.scheme not in _ALLOWED_SCHEMES:
         raise ValueError(f"Endpoint scheme must be http or https, got {parsed.scheme!r}")
     hostname = parsed.hostname or ""
@@ -151,10 +180,9 @@ def _call_ollama(config: dict, system: str, user: str) -> str:
     }).encode()
 
     req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
-    # Note: API key is in headers, so exceptions may expose it in tracebacks
-    with _opener.open(req, timeout=300) as resp:
+    with _safe_llm_request(req) as resp:
         data = json.loads(resp.read())
-    return data["message"]["content"]
+    return _extract_response(data, "message", "content")
 
 
 def _call_openai(config: dict, system: str, user: str) -> str:
@@ -179,10 +207,9 @@ def _call_openai(config: dict, system: str, user: str) -> str:
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}",
     })
-    # Note: API key is in headers, so exceptions may expose it in tracebacks
-    with _opener.open(req, timeout=300) as resp:
+    with _safe_llm_request(req) as resp:
         data = json.loads(resp.read())
-    return data["choices"][0]["message"]["content"]
+    return _extract_response(data, "choices", 0, "message", "content")
 
 
 def _call_gemini(config: dict, system: str, user: str) -> str:
@@ -208,10 +235,9 @@ def _call_gemini(config: dict, system: str, user: str) -> str:
         "Content-Type": "application/json",
         "x-goog-api-key": api_key,
     })
-    # Note: API key is in headers, so exceptions may expose it in tracebacks
-    with _opener.open(req, timeout=300) as resp:
+    with _safe_llm_request(req) as resp:
         data = json.loads(resp.read())
-    return data["candidates"][0]["content"]["parts"][0]["text"]
+    return _extract_response(data, "candidates", 0, "content", "parts", 0, "text")
 
 
 def _call_lmstudio(config: dict, system: str, user: str) -> str:
@@ -240,9 +266,9 @@ def _call_lmstudio(config: dict, system: str, user: str) -> str:
         headers["Authorization"] = f"Bearer {api_key}"
 
     req = urllib.request.Request(url, data=body, headers=headers)
-    with _opener.open(req, timeout=300) as resp:
+    with _safe_llm_request(req) as resp:
         data = json.loads(resp.read())
-    return data["choices"][0]["message"]["content"]
+    return _extract_response(data, "choices", 0, "message", "content")
 
 
 # Lookup table mapping provider name → call function

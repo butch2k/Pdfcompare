@@ -540,7 +540,7 @@ btnCompare.addEventListener("click", async () => {
 // AI Report tab.
 async function requestAiReport(data) {
     const aiTab = document.getElementById("tab-ai-report");
-    aiTab.innerHTML = '<div class="ai-loading" role="status"><div class="spinner" style="display:inline-block"></div> Generating AI report&hellip;</div>';
+    aiTab.innerHTML = '<div class="ai-loading" role="status" aria-label="Generating AI report"><div class="spinner" style="display:inline-block"></div> Generating AI report&hellip;</div>';
     btnAiReport.disabled = true;
 
     const cfg = {};
@@ -596,11 +596,11 @@ function renderSideBySide(data) {
     for (const block of data.diff_blocks) {
         // Insert page break markers
         if (block.left_page && block.left_page !== lastLeftPage) {
-            leftHtml += `<div class="diff-line page-break">— Page ${block.left_page} —</div>`;
+            leftHtml += `<div class="diff-line page-break" role="separator" aria-label="Page ${block.left_page}">— Page ${block.left_page} —</div>`;
             lastLeftPage = block.left_page;
         }
         if (block.right_page && block.right_page !== lastRightPage) {
-            rightHtml += `<div class="diff-line page-break">— Page ${block.right_page} —</div>`;
+            rightHtml += `<div class="diff-line page-break" role="separator" aria-label="Page ${block.right_page}">— Page ${block.right_page} —</div>`;
             lastRightPage = block.right_page;
         }
 
@@ -731,7 +731,12 @@ async function renderPdfPage(side) {
     const pageNum = side === "a" ? currentPageA : currentPageB;
     const canvas = document.getElementById(`pdf-canvas-${side}`);
     const info = document.getElementById(`pdf-${side}-info`);
-    if (!doc || !canvas) return;
+    if (!doc) {
+        const wrap = canvas && canvas.closest(".pdf-canvas-wrap");
+        if (wrap) wrap.innerHTML = '<div style="color:var(--muted);padding:2rem;text-align:center;">PDF preview unavailable</div>';
+        return;
+    }
+    if (!canvas) return;
 
     // Highlight pages that contain diffs: yellow border + "• Changes" label
     const changedPages = side === "a" ? changedPagesA : changedPagesB;
@@ -772,7 +777,15 @@ function saveToHistory(data) {
     };
     history.unshift(entry);
     if (history.length > MAX_HISTORY) history.length = MAX_HISTORY;
-    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); } catch { /* quota exceeded */ }
+    try {
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    } catch {
+        // Quota exceeded — remove oldest entry and retry once
+        if (history.length > 1) {
+            history.pop();
+            try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); } catch { /* still full */ }
+        }
+    }
 }
 
 function renderHistory() {
