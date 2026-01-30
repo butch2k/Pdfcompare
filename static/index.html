@@ -258,7 +258,13 @@
                             <option value="ollama">Ollama (local)</option>
                             <option value="lmstudio">LM Studio (local)</option>
                             <option value="openai">OpenAI (ChatGPT)</option>
+                            <option value="anthropic">Anthropic (Claude)</option>
                             <option value="gemini">Google Gemini</option>
+                            <option value="mistral">Mistral AI</option>
+                            <option value="groq">Groq</option>
+                            <option value="deepseek">DeepSeek</option>
+                            <option value="kimi">Kimi (Moonshot)</option>
+                            <option value="perplexity">Perplexity</option>
                         </select>
                     </label>
                     <label>
@@ -274,9 +280,15 @@
                         <input type="text" id="llm-endpoint" placeholder="Leave blank for default" aria-describedby="llm-hint">
                     </label>
                     <div class="hint" id="llm-hint">
-                        <b>Ollama:</b> local, no key &nbsp;|&nbsp;
-                        <b>OpenAI:</b> key from platform.openai.com &nbsp;|&nbsp;
-                        <b>Gemini:</b> key from aistudio.google.com
+                        <b>Ollama/LM Studio:</b> local, no key &nbsp;|&nbsp;
+                        <b>OpenAI:</b> platform.openai.com &nbsp;|&nbsp;
+                        <b>Anthropic:</b> console.anthropic.com &nbsp;|&nbsp;
+                        <b>Gemini:</b> aistudio.google.com &nbsp;|&nbsp;
+                        <b>Mistral:</b> console.mistral.ai &nbsp;|&nbsp;
+                        <b>Groq:</b> console.groq.com &nbsp;|&nbsp;
+                        <b>DeepSeek:</b> platform.deepseek.com &nbsp;|&nbsp;
+                        <b>Kimi:</b> platform.moonshot.cn &nbsp;|&nbsp;
+                        <b>Perplexity:</b> perplexity.ai/settings/api
                     </div>
                     <div style="display:flex;gap:.5rem;align-items:center;margin-top:.75rem;">
                         <button class="btn-secondary btn-sm" id="btn-save-llm" type="button">Save Settings</button>
@@ -453,7 +465,7 @@ function showLlmFeedback(msg, color = "var(--green)") {
 }
 
 llmProvider.addEventListener("change", () => {
-    const defaults = { ollama: "llama3", lmstudio: "default", openai: "gpt-4o", gemini: "gemini-2.0-flash" };
+    const defaults = { ollama: "llama3", lmstudio: "default", openai: "gpt-4o", anthropic: "claude-sonnet-4-20250514", gemini: "gemini-2.0-flash", mistral: "mistral-large-latest", groq: "llama-3.3-70b-versatile", deepseek: "deepseek-chat", kimi: "moonshot-v1-auto", perplexity: "sonar-pro" };
     if (!llmModel.value && defaults[llmProvider.value]) llmModel.value = defaults[llmProvider.value];
 });
 

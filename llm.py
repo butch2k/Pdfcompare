@@ -373,11 +373,155 @@ def _call_lmstudio(config: dict, system: str, user: str) -> str:
 
 
 # Lookup table mapping provider name → call function
+def _call_anthropic(config: dict, system: str, user: str) -> str:
+    """Call the Anthropic Messages API for Claude models."""
+    api_key = config.get("api_key", "")
+    url = config.get("endpoint", "https://api.anthropic.com/v1/messages")
+    _validate_endpoint(url)
+
+    body = json.dumps({
+        "model": config.get("model", "claude-sonnet-4-20250514"),
+        "max_tokens": 8192,
+        "system": system,
+        "messages": [{"role": "user", "content": user}],
+    }).encode()
+
+    req = urllib.request.Request(url, data=body, headers={
+        "Content-Type": "application/json",
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+    })
+    with _safe_llm_request(req) as resp:
+        data = json.loads(resp.read())
+    return _extract_response(data, "content", 0, "text")
+
+
+def _call_mistral(config: dict, system: str, user: str) -> str:
+    """Call the Mistral AI Chat API (OpenAI-compatible)."""
+    api_key = config.get("api_key", "")
+    url = config.get("endpoint", "https://api.mistral.ai/v1/chat/completions")
+    _validate_endpoint(url)
+
+    body = json.dumps({
+        "model": config.get("model", "mistral-large-latest"),
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    }).encode()
+
+    req = urllib.request.Request(url, data=body, headers={
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    })
+    with _safe_llm_request(req) as resp:
+        data = json.loads(resp.read())
+    return _extract_response(data, "choices", 0, "message", "content")
+
+
+def _call_groq(config: dict, system: str, user: str) -> str:
+    """Call the Groq API (OpenAI-compatible, fast inference)."""
+    api_key = config.get("api_key", "")
+    url = config.get("endpoint", "https://api.groq.com/openai/v1/chat/completions")
+    _validate_endpoint(url)
+
+    body = json.dumps({
+        "model": config.get("model", "llama-3.3-70b-versatile"),
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    }).encode()
+
+    req = urllib.request.Request(url, data=body, headers={
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    })
+    with _safe_llm_request(req) as resp:
+        data = json.loads(resp.read())
+    return _extract_response(data, "choices", 0, "message", "content")
+
+
+def _call_deepseek(config: dict, system: str, user: str) -> str:
+    """Call the DeepSeek API (OpenAI-compatible)."""
+    api_key = config.get("api_key", "")
+    url = config.get("endpoint", "https://api.deepseek.com/chat/completions")
+    _validate_endpoint(url)
+
+    body = json.dumps({
+        "model": config.get("model", "deepseek-chat"),
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    }).encode()
+
+    req = urllib.request.Request(url, data=body, headers={
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    })
+    with _safe_llm_request(req) as resp:
+        data = json.loads(resp.read())
+    return _extract_response(data, "choices", 0, "message", "content")
+
+
+def _call_kimi(config: dict, system: str, user: str) -> str:
+    """Call the Moonshot Kimi API (OpenAI-compatible)."""
+    api_key = config.get("api_key", "")
+    url = config.get("endpoint", "https://api.moonshot.cn/v1/chat/completions")
+    _validate_endpoint(url)
+
+    body = json.dumps({
+        "model": config.get("model", "moonshot-v1-auto"),
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    }).encode()
+
+    req = urllib.request.Request(url, data=body, headers={
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    })
+    with _safe_llm_request(req) as resp:
+        data = json.loads(resp.read())
+    return _extract_response(data, "choices", 0, "message", "content")
+
+
+def _call_perplexity(config: dict, system: str, user: str) -> str:
+    """Call the Perplexity API (OpenAI-compatible)."""
+    api_key = config.get("api_key", "")
+    url = config.get("endpoint", "https://api.perplexity.ai/chat/completions")
+    _validate_endpoint(url)
+
+    body = json.dumps({
+        "model": config.get("model", "sonar-pro"),
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    }).encode()
+
+    req = urllib.request.Request(url, data=body, headers={
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    })
+    with _safe_llm_request(req) as resp:
+        data = json.loads(resp.read())
+    return _extract_response(data, "choices", 0, "message", "content")
+
+
 _PROVIDERS = {
     "ollama": _call_ollama,
     "openai": _call_openai,
     "gemini": _call_gemini,
     "lmstudio": _call_lmstudio,
+    "anthropic": _call_anthropic,
+    "mistral": _call_mistral,
+    "groq": _call_groq,
+    "deepseek": _call_deepseek,
+    "kimi": _call_kimi,
+    "perplexity": _call_perplexity,
 }
 
 
