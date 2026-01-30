@@ -274,6 +274,7 @@
             <button class="btn-secondary" id="btn-export-diff" disabled>Export Diff</button>
             <button class="btn-secondary" id="btn-export-report" disabled>Export Report</button>
             <button class="btn-secondary" id="btn-export-ai-report" disabled>Export AI Report</button>
+            <button class="btn-secondary" id="btn-export-ai-pdf" disabled>Export PDF</button>
         </div>
 
         <div id="error-banner" role="alert" aria-live="assertive" style="display:none;background:var(--red-bg);border:1px solid var(--red);color:var(--red);padding:.75rem 1rem;border-radius:8px;margin-bottom:1rem;font-size:.85rem;"></div>
@@ -304,6 +305,9 @@
         </div>
     </main>
 
+<!-- html2pdf.js for AI report PDF export -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" integrity="sha512-GsLlZN/3F2ErC5ifS5QtgpiJtWd43JWSuIgh7mbzZ8zBps+dvLusV+eNQATqgA/HdeKFVgA5v3S/cIrLF7QnIg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
 <script type="module">
 // ── PDF.js setup ────────────────────────────────────────────────────────────
 // Dynamically import PDF.js as an ES module and configure its web worker
@@ -322,6 +326,7 @@ const btnCompare = document.getElementById("btn-compare");
 const btnDiff = document.getElementById("btn-export-diff");
 const btnReport = document.getElementById("btn-export-report");
 const btnAiReport = document.getElementById("btn-export-ai-report");
+const btnAiPdf = document.getElementById("btn-export-ai-pdf");
 const spinner = document.getElementById("spinner");
 const resultsEl = document.getElementById("results");
 
@@ -542,6 +547,7 @@ async function requestAiReport(data) {
     const aiTab = document.getElementById("tab-ai-report");
     aiTab.innerHTML = '<div class="ai-loading" role="status" aria-label="Generating AI report"><div class="spinner" style="display:inline-block"></div> Generating AI report&hellip;</div>';
     btnAiReport.disabled = true;
+    btnAiPdf.disabled = true;
 
     const cfg = {};
     if (llmModel.value) cfg.model = llmModel.value;
@@ -557,8 +563,9 @@ async function requestAiReport(data) {
         const result = await resp.json();
         if (!resp.ok) { aiTab.innerHTML = `<div class="report" role="alert" style="color:var(--red);">LLM Error: ${esc(result.error || "Unknown error")}</div>`; return; }
         aiReportText = result.report;
-        aiTab.innerHTML = `<div class="report">${renderMarkdown(result.report)}</div>`;
+        aiTab.innerHTML = `<div class="report" id="ai-report-content">${renderMarkdown(result.report)}</div>`;
         btnAiReport.disabled = false;
+        btnAiPdf.disabled = false;
     } catch (e) {
         aiTab.innerHTML = `<div class="report" role="alert" style="color:var(--red);">Request failed: ${esc(e.message)}</div>`;
     }
@@ -832,6 +839,7 @@ function loadFromHistory(entry) {
     btnDiff.disabled = true;
     btnReport.disabled = !entry.report;
     btnAiReport.disabled = true;
+    btnAiPdf.disabled = true;
 
     const s = entry.stats;
     document.getElementById("stats-bar").innerHTML = `
@@ -884,6 +892,8 @@ function esc(s) {
  * HTML-escaped via esc() to prevent injection from LLM output.
  */
 function renderMarkdown(md) {
+    // Strip outer markdown code fence if LLM wrapped the response in one
+    md = md.replace(/^```(?:markdown)?\s*\n?/i, "").replace(/\n?```\s*$/, "");
     let html = esc(md);
     html = html.replace(/^### (.+)$/gm, "<h3>$1</h3>");
     html = html.replace(/^## (.+)$/gm, "<h2>$1</h2>");
@@ -915,6 +925,31 @@ function download(content, filename, type) {
 btnDiff.addEventListener("click", () => { if (compareResult) download(compareResult.unified_diff, "diff.patch", "text/plain"); });
 btnReport.addEventListener("click", () => { if (compareResult) download(compareResult.report, "comparison-report.md", "text/markdown"); });
 btnAiReport.addEventListener("click", () => { if (aiReportText) download(aiReportText, "ai-comparison-report.md", "text/markdown"); });
+
+// Export AI report as PDF using html2pdf.js
+btnAiPdf.addEventListener("click", () => {
+    const reportContent = document.getElementById("ai-report-content");
+    if (!reportContent) return;
+
+    const opt = {
+        margin: [15, 15, 15, 15],
+        filename: "ai-comparison-report.pdf",
+        image: { type: "jpeg", quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+        pagebreak: { mode: ["avoid-all", "css", "legacy"] }
+    };
+
+    // Clone content so we can style it for PDF without affecting the page
+    const clone = reportContent.cloneNode(true);
+    clone.style.padding = "0";
+    clone.style.margin = "0";
+    clone.style.color = "#222";
+    clone.style.fontSize = "12pt";
+    clone.style.lineHeight = "1.6";
+    document.body.appendChild(clone);
+    html2pdf().set(opt).from(clone).save().then(() => clone.remove());
+});
 </script>
 </body>
 </html>
