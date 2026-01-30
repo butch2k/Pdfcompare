@@ -6,10 +6,17 @@ A web application for comparing two PDF documents side by side, highlighting dif
 
 - **Drag-and-drop upload** — drop two PDFs onto the browser to compare them
 - **Side-by-side diff view** — color-coded line-by-line comparison (green = added, red = removed, yellow = modified)
+- **Word-level highlighting** — individual changed words are highlighted within modified lines for finer granularity
+- **Page-aware diff** — diff blocks are annotated with source page numbers; page-break separators appear in the side-by-side view
 - **Unified diff view** — standard patch-style output
+- **PDF preview** — client-side rendering of both PDFs with page-by-page navigation (via pdf.js)
+- **Metadata diff** — side-by-side comparison of PDF metadata fields (title, author, dates, page count, etc.)
 - **Built-in report** — deterministic Markdown report with statistics, severity rating, and consequence analysis
 - **AI-powered report** (optional) — send the diff to an LLM for deeper semantic analysis of changes
+- **Configurable ignore rules** — ignore whitespace, case, headers/footers, or lines matching a custom regex
+- **Comparison history** — recent comparisons are persisted in localStorage for quick access
 - **Export** — download the diff as a `.patch` file and either report as `.md`
+- **Accessible UI** — ARIA tabs with keyboard navigation, focus indicators, screen-reader labels, colorblind-friendly text markers
 
 ## Requirements
 
@@ -88,6 +95,8 @@ docker run -p 5000:5000 \
 docker run -p 5000:5000 --env-file .env pdfcompare
 ```
 
+The Docker image runs as a non-root user (`appuser`) for security.
+
 ### Docker Compose
 
 ```yaml
@@ -107,16 +116,20 @@ docker compose up
 ## Usage
 
 1. **Upload PDFs** — drag and drop (or click to browse) a PDF into each drop zone. The left zone is the original document, the right zone is the modified version.
-2. **Click Compare** — the app extracts text from both PDFs, computes the diff, and displays results.
-3. **Browse results** using the tabs:
-   - **Side-by-Side** — two-column highlighted diff with line numbers
+2. **Configure ignore rules** (optional) — expand the *Ignore Rules* panel to skip whitespace differences, case changes, headers/footers, or lines matching a regex pattern.
+3. **Click Compare** — the app extracts text from both PDFs, computes the diff, and displays results.
+4. **Browse results** using the tabs:
+   - **Side-by-Side** — two-column highlighted diff with line numbers, word-level highlights, and page-break markers
    - **Unified Diff** — standard unified diff format
+   - **PDF Preview** — rendered pages of both PDFs with previous/next navigation
+   - **Metadata** — table comparing PDF metadata fields, changed rows highlighted
    - **Report** — auto-generated Markdown analysis with statistics, categorized changes, and consequences
    - **AI Report** — LLM-generated analysis (only available when a provider is configured)
-4. **Export** — use the buttons above the results to download:
+5. **Export** — use the buttons above the results to download:
    - `diff.patch` — unified diff file
    - `comparison-report.md` — the built-in report
    - `ai-comparison-report.md` — the LLM report (when available)
+6. **History** — previous comparisons are saved automatically and listed below the results. Click an entry to reload it, or click × to remove it.
 
 ## LLM Configuration
 
@@ -166,20 +179,39 @@ Use `LLM_ENDPOINT` to point at any compatible API server:
 
 ```
 Pdfcompare/
-├── app.py              # Flask backend: PDF extraction, diff, API routes
-├── config.py           # Centralised config from .env
+├── app.py              # Flask backend: PDF extraction, diff engine, report
+│                       #   generation, and all API routes
+├── config.py           # Centralised .env configuration with defaults
 ├── llm.py              # LLM provider abstraction (Ollama, OpenAI, Gemini)
-├── requirements.txt    # Python dependencies
-├── .env.example        # Example environment config
-├── Dockerfile          # Container build
+│                       #   with SSRF protection on endpoint URLs
+├── requirements.txt    # Python dependencies (flask, pdfplumber, etc.)
+├── .env.example        # Example environment config template
+├── Dockerfile          # Container build (non-root user, gunicorn)
 ├── .dockerignore       # Docker build exclusions
 └── static/
     └── index.html      # Single-page frontend (HTML + CSS + JS)
+                        #   Includes pdf.js for client-side PDF rendering,
+                        #   ARIA-accessible tabs, drag-and-drop uploads,
+                        #   localStorage history, and all diff views
 ```
 
 ## How it works
 
-1. **Text extraction** — `pdfplumber` reads each PDF page and extracts text line by line.
-2. **Diff computation** — Python's `difflib.SequenceMatcher` compares the two line arrays and produces tagged blocks (equal, insert, delete, replace).
-3. **Built-in report** — a deterministic template function walks the diff blocks and generates Markdown with statistics, severity assessment, and consequence analysis.
-4. **AI report** — the unified diff and statistics are sent to the selected LLM provider with a system prompt that instructs the model to produce a detailed semantic analysis of the changes.
+1. **Text extraction** — `pdfplumber` reads each PDF page and extracts text line by line. Page-boundary sentinels are inserted so diffs can be mapped back to source pages.
+2. **Ignore rules** — optional filters (whitespace, case, headers/footers, regex) are applied to the extracted lines before diffing.
+3. **Diff computation** — Python's `difflib.SequenceMatcher` (with `autojunk=False` for accuracy on large documents) compares the two line arrays and produces tagged blocks (equal, insert, delete, replace). Replace blocks additionally get word-level diffs for finer highlighting.
+4. **Page index** — a pre-computed array maps every line to its page number in O(1), used to annotate diff blocks with page citations.
+5. **Metadata extraction** — PDF metadata fields (title, author, dates, etc.) are extracted in the same `pdfplumber.open()` call as text, avoiding a redundant parse.
+6. **Built-in report** — a deterministic template function walks the diff blocks and generates Markdown with statistics, severity assessment (Low/Medium/High by change percentage), categorised changes with page citations, and consequence analysis.
+7. **AI report** — the unified diff and statistics are sent to the selected LLM provider with a system prompt that instructs the model to produce a detailed semantic analysis of the changes. The prompt is truncated at ~80K characters to fit typical context windows.
+8. **PDF preview** — pdf.js renders both PDFs client-side on `<canvas>` elements with page-by-page navigation, independent of the text-based diff.
+9. **History** — comparison results (minus word-level diffs to save space) are stored in `localStorage`, capped at 20 entries.
+
+## Security notes
+
+- **SSRF protection** — user-supplied LLM endpoint URLs are validated against a blocklist of cloud metadata addresses and restricted schemes.
+- **ReDoS mitigation** — user-supplied regex patterns are rejected if longer than 500 characters.
+- **XSS prevention** — all user-supplied text is HTML-escaped via a DOM-based `esc()` function before rendering.
+- **No secrets in responses** — the `/api/config` endpoint exposes only a boolean `has_api_key`, never the key itself.
+- **Non-root Docker** — the container runs as an unprivileged `appuser`.
+- **Generic error messages** — server-side exceptions are logged with full tracebacks but only generic messages are returned to the client.

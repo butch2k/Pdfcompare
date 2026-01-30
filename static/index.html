@@ -298,6 +298,8 @@
 
 <script type="module">
 // ── PDF.js setup ────────────────────────────────────────────────────────────
+// Dynamically import PDF.js as an ES module and configure its web worker
+// for off-thread PDF parsing.  The worker URL must match the library version.
 const pdfjsLib = await import("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min.mjs");
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.worker.min.mjs";
 
@@ -320,13 +322,15 @@ const llmModel = document.getElementById("llm-model");
 const llmApiKey = document.getElementById("llm-apikey");
 const llmEndpoint = document.getElementById("llm-endpoint");
 
-let compareResult = null;
-let aiReportText = null;
-let pdfBytesA = null, pdfBytesB = null;
-let pdfDocA = null, pdfDocB = null;
-let currentPageA = 1, currentPageB = 1;
+let compareResult = null;   // Last comparison response from /api/compare
+let aiReportText = null;    // Last AI report text (for export)
+let pdfBytesA = null, pdfBytesB = null;   // Raw PDF bytes cached for pdf.js rendering
+let pdfDocA = null, pdfDocB = null;       // Parsed pdf.js document objects
+let currentPageA = 1, currentPageB = 1;   // Current page index for PDF preview nav
 
 // ── Load server defaults ────────────────────────────────────────────────────
+// Fetch non-secret LLM config from the server's .env so the UI fields
+// are pre-populated without the user having to re-enter them.
 (async function loadDefaults() {
     try {
         const resp = await fetch("/api/config");
@@ -345,6 +349,9 @@ llmProvider.addEventListener("change", () => {
 });
 
 // ── Drop zones ──────────────────────────────────────────────────────────────
+// Wire up drag-and-drop and file-input events for each upload zone.
+// When a PDF is selected, its bytes are cached (for pdf.js preview later)
+// and the Compare button is enabled once both slots have files.
 function setupZone(zone, input, nameEl, side) {
     ["dragover", "dragenter"].forEach(e => zone.addEventListener(e, ev => { ev.preventDefault(); zone.classList.add("dragover"); }));
     ["dragleave", "drop"].forEach(e => zone.addEventListener(e, () => zone.classList.remove("dragover")));
@@ -377,6 +384,8 @@ setupZone(zoneB, fileB, nameB, "b");
 function checkReady() { btnCompare.disabled = !(fileA.files[0] && fileB.files[0]); }
 
 // ── Tabs ────────────────────────────────────────────────────────────────────
+// ARIA-compliant tab widget: click or arrow-key to switch panels.
+// Only the active tab is in the tab order (tabindex=0); others are -1.
 const tabButtons = document.querySelectorAll('[role="tab"]');
 const tabPanels = document.querySelectorAll('[role="tabpanel"]');
 
@@ -444,6 +453,9 @@ btnCompare.addEventListener("click", async () => {
 });
 
 // ── AI report ───────────────────────────────────────────────────────────────
+// Send the unified diff + stats to /api/llm-report for AI-powered analysis.
+// Shows a spinner while waiting and renders the Markdown response in the
+// AI Report tab.
 async function requestAiReport(data) {
     const aiTab = document.getElementById("tab-ai-report");
     aiTab.innerHTML = '<div class="ai-loading" role="status"><div class="spinner" style="display:inline-block"></div> Generating AI report&hellip;</div>';
@@ -488,6 +500,9 @@ function renderResults(data) {
 }
 
 // ── Side-by-side with word-level diffs and page markers ─────────────────────
+// Builds two parallel columns of diff lines.  Page-break separators are
+// inserted when the page number changes.  Replace blocks use word-level
+// spans (wdiff-del / wdiff-ins) for finer highlighting when available.
 function renderSideBySide(data) {
     let leftHtml = `<div class="diff-col-header">${esc(data.name_a)}</div>`;
     let rightHtml = `<div class="diff-col-header">${esc(data.name_b)}</div>`;
@@ -627,6 +642,9 @@ async function renderPdfPage(side) {
 }
 
 // ── History (localStorage) ──────────────────────────────────────────────────
+// Persist the last MAX_HISTORY comparison results in localStorage so users
+// can revisit them without re-uploading.  Word-level diffs are stripped
+// before saving to reduce storage size.
 const HISTORY_KEY = "pdfcompare_history";
 const MAX_HISTORY = 20;
 
@@ -711,10 +729,20 @@ function loadFromHistory(entry) {
 renderHistory();
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * HTML-escape a string to prevent XSS when inserting user-supplied text.
+ * Uses a temporary DOM element (textContent → innerHTML) for correctness.
+ */
 function esc(s) {
     const d = document.createElement("div"); d.textContent = s; return d.innerHTML;
 }
 
+/**
+ * Lightweight Markdown → HTML converter.  Handles headings, bold, italic,
+ * horizontal rules, lists, and pipe-delimited tables.  Input is first
+ * HTML-escaped via esc() to prevent injection from LLM output.
+ */
 function renderMarkdown(md) {
     let html = esc(md);
     html = html.replace(/^### (.+)$/gm, "<h3>$1</h3>");
@@ -736,6 +764,7 @@ function renderMarkdown(md) {
     return html;
 }
 
+/** Trigger a browser download of a string as a file. */
 function download(content, filename, type) {
     const blob = new Blob([content], { type });
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
