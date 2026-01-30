@@ -11,6 +11,7 @@ import io
 import re
 import difflib
 import logging
+import subprocess
 import threading
 import time
 import json
@@ -25,6 +26,25 @@ import pdfplumber
 
 import config
 from llm import generate_llm_report
+
+# ---------------------------------------------------------------------------
+# Version
+# ---------------------------------------------------------------------------
+
+APP_VERSION = "1.0.0"
+
+def _get_build_number() -> str:
+    """Return git commit count as a build/push number, or '0' if unavailable."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            capture_output=True, text=True, timeout=5
+        )
+        return result.stdout.strip() if result.returncode == 0 else "0"
+    except Exception:
+        return "0"
+
+BUILD_NUMBER = _get_build_number()
 
 # ---------------------------------------------------------------------------
 # App initialisation
@@ -558,6 +578,7 @@ def get_config():
         "llm_model": config.LLM_MODEL,
         "llm_endpoint": config.LLM_ENDPOINT,
         "has_api_key": bool(config.LLM_API_KEY),
+        "version": f"{APP_VERSION}-{BUILD_NUMBER}",
     })
 
 
