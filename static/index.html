@@ -973,7 +973,7 @@ function renderMarkdown(md) {
         return "<tr>" + cells.map(c => `<td>${c}</td>`).join("") + "</tr>";
     });
     html = html.replace(/(<tr>.*<\/tr>\s*)+/gs, (m) => `<table>${m}</table>`);
-    html = html.replace(/(<li>.*<\/li>\s*)+/gs, (m) => `<ul>${m}</ul>`);
+    html = html.replace(/(<li>.*?<\/li>\s*)+/gs, (m) => `<ul>${m}</ul>`);
     html = html.replace(/\n/g, "<br>");
     return html;
 }
