@@ -272,7 +272,7 @@ def _call_ollama(config: dict, system: str, user: str) -> str:
     _validate_endpoint(url, allow_local=True)
 
     body = json.dumps({
-        "model": config.get("model", "llama3"),
+        "model": config.get("model", "llama3.3:70b"),
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -297,7 +297,7 @@ def _call_openai(config: dict, system: str, user: str) -> str:
     _validate_endpoint(url)
 
     body = json.dumps({
-        "model": config.get("model", "gpt-4o"),
+        "model": config.get("model", "gpt-5.2"),
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -320,7 +320,7 @@ def _call_gemini(config: dict, system: str, user: str) -> str:
     to avoid leaking the key in logs or referer headers.
     """
     api_key = config.get("api_key", "")
-    model = config.get("model", "gemini-2.0-flash")
+    model = config.get("model", "gemini-3-pro")
     url = config.get(
         "endpoint",
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
@@ -380,7 +380,7 @@ def _call_anthropic(config: dict, system: str, user: str) -> str:
     _validate_endpoint(url)
 
     body = json.dumps({
-        "model": config.get("model", "claude-sonnet-4-20250514"),
+        "model": config.get("model", "claude-opus-4-5-20251101"),
         "max_tokens": 8192,
         "system": system,
         "messages": [{"role": "user", "content": user}],
@@ -403,7 +403,7 @@ def _call_mistral(config: dict, system: str, user: str) -> str:
     _validate_endpoint(url)
 
     body = json.dumps({
-        "model": config.get("model", "mistral-large-latest"),
+        "model": config.get("model", "mistral-large-3"),
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -472,7 +472,7 @@ def _call_kimi(config: dict, system: str, user: str) -> str:
     _validate_endpoint(url)
 
     body = json.dumps({
-        "model": config.get("model", "moonshot-v1-auto"),
+        "model": config.get("model", "kimi-k2.5"),
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
