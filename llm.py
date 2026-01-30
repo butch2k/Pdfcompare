@@ -10,10 +10,31 @@ Security: all user-supplied endpoint URLs are validated against a blocklist
 of cloud-metadata and internal addresses to prevent SSRF.
 """
 
+import ipaddress
 import json
+import socket
 import urllib.request
 import urllib.error
 from urllib.parse import urlparse
+
+
+# ---------------------------------------------------------------------------
+# No-redirect HTTP opener to prevent SSRF via redirect
+# ---------------------------------------------------------------------------
+
+class _NoRedirectHandler(urllib.request.HTTPErrorProcessor):
+    """Treat 3xx redirects as errors to prevent SSRF via redirect."""
+    def http_response(self, request, response):
+        if 300 <= response.code < 400:
+            raise urllib.error.HTTPError(
+                request.full_url, response.code,
+                "Redirects are not allowed for LLM endpoints",
+                response.headers, response,
+            )
+        return super().http_response(request, response)
+    https_response = http_response
+
+_opener = urllib.request.build_opener(_NoRedirectHandler)
 
 
 # ---------------------------------------------------------------------------
@@ -53,8 +74,8 @@ _BLOCKED_HOSTS = {
 def _validate_endpoint(url: str) -> None:
     """Validate an LLM endpoint URL to block SSRF attempts.
 
-    Raises ValueError if the URL uses a disallowed scheme, points to a
-    known cloud-metadata address, or uses an ambiguous 0-prefixed host.
+    Resolves the hostname to an IP and rejects private/loopback addresses,
+    known cloud-metadata endpoints, and ambiguous schemes.
     """
     parsed = urlparse(url)
     if parsed.scheme not in _ALLOWED_SCHEMES:
@@ -62,9 +83,20 @@ def _validate_endpoint(url: str) -> None:
     hostname = parsed.hostname or ""
     if hostname in _BLOCKED_HOSTS:
         raise ValueError("This endpoint address is not allowed")
-    # Block 0-prefixed IPs (e.g. 0177.0.0.1) and the IPv6 unspecified address
+    # Block 0-prefixed IPs and IPv6 unspecified address
     if hostname.startswith("0") or hostname == "[::]":
         raise ValueError("This endpoint address is not allowed")
+
+    # Resolve hostname and check all resulting IPs against private ranges
+    try:
+        infos = socket.getaddrinfo(hostname, parsed.port or 443, proto=socket.IPPROTO_TCP)
+    except socket.gaierror:
+        raise ValueError(f"Cannot resolve hostname: {hostname}")
+
+    for family, _, _, _, sockaddr in infos:
+        ip = ipaddress.ip_address(sockaddr[0])
+        if ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local:
+            raise ValueError("This endpoint address is not allowed")
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +146,8 @@ def _call_ollama(config: dict, system: str, user: str) -> str:
     }).encode()
 
     req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=300) as resp:
+    # Note: API key is in headers, so exceptions may expose it in tracebacks
+    with _opener.open(req, timeout=300) as resp:
         data = json.loads(resp.read())
     return data["message"]["content"]
 
@@ -141,7 +174,8 @@ def _call_openai(config: dict, system: str, user: str) -> str:
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}",
     })
-    with urllib.request.urlopen(req, timeout=300) as resp:
+    # Note: API key is in headers, so exceptions may expose it in tracebacks
+    with _opener.open(req, timeout=300) as resp:
         data = json.loads(resp.read())
     return data["choices"][0]["message"]["content"]
 
@@ -169,7 +203,8 @@ def _call_gemini(config: dict, system: str, user: str) -> str:
         "Content-Type": "application/json",
         "x-goog-api-key": api_key,
     })
-    with urllib.request.urlopen(req, timeout=300) as resp:
+    # Note: API key is in headers, so exceptions may expose it in tracebacks
+    with _opener.open(req, timeout=300) as resp:
         data = json.loads(resp.read())
     return data["candidates"][0]["content"]["parts"][0]["text"]
 

@@ -270,6 +270,8 @@
             <button class="btn-secondary" id="btn-export-ai-report" disabled>Export AI Report</button>
         </div>
 
+        <div id="error-banner" role="alert" aria-live="assertive" style="display:none;background:var(--red-bg);border:1px solid var(--red);color:var(--red);padding:.75rem 1rem;border-radius:8px;margin-bottom:1rem;font-size:.85rem;"></div>
+
         <div id="results">
             <div class="stats" id="stats-bar" aria-label="Comparison statistics"></div>
 
@@ -411,6 +413,7 @@ tabButtons.forEach(tab => {
 // ── Compare ─────────────────────────────────────────────────────────────────
 btnCompare.addEventListener("click", async () => {
     const form = new FormData();
+    clearError();
     form.append("pdf_a", fileA.files[0]);
     form.append("pdf_b", fileB.files[0]);
 
@@ -428,11 +431,14 @@ btnCompare.addEventListener("click", async () => {
     try {
         const resp = await fetch("/api/compare", { method: "POST", body: form });
         const data = await resp.json();
-        if (!resp.ok) { alert(data.error || "Comparison failed."); return; }
+        if (!resp.ok) { showError(data.error || "Comparison failed."); return; }
         compareResult = data;
         aiReportText = null;
         renderResults(data);
         resultsEl.style.display = "block";
+        resultsEl.scrollIntoView({ behavior: "smooth" });
+        resultsEl.setAttribute("tabindex", "-1");
+        resultsEl.focus({ preventScroll: true });
         btnDiff.disabled = false;
         btnReport.disabled = false;
 
@@ -445,7 +451,7 @@ btnCompare.addEventListener("click", async () => {
                 '<div class="report" style="color:var(--muted);padding:2rem 0;">Configure an LLM provider above and re-run the comparison to generate an AI-powered report.</div>';
         }
     } catch (e) {
-        alert("Request failed: " + e.message);
+        showError("Request failed: " + e.message);
     } finally {
         btnCompare.disabled = false;
         spinner.style.display = "none";
@@ -486,10 +492,12 @@ async function requestAiReport(data) {
 function renderResults(data) {
     const s = data.stats;
     document.getElementById("stats-bar").innerHTML = `
-        <div class="stat"><b>${s.equal}</b>Unchanged</div>
-        <div class="stat ins"><b>+${s.insert}</b>Inserted</div>
-        <div class="stat del"><b>-${s.delete}</b>Deleted</div>
-        <div class="stat mod"><b>~${s.replace}</b>Modified</div>
+        <dl class="stats" style="display:flex;gap:1.25rem;flex-wrap:wrap;margin:0;">
+            <div class="stat"><dt style="font-size:.82rem;">Unchanged</dt><dd style="font-size:1.1rem;font-weight:700;">${s.equal}</dd></div>
+            <div class="stat ins"><dt style="font-size:.82rem;">Inserted</dt><dd style="font-size:1.1rem;font-weight:700;color:var(--green);">+${s.insert}</dd></div>
+            <div class="stat del"><dt style="font-size:.82rem;">Deleted</dt><dd style="font-size:1.1rem;font-weight:700;color:var(--red);">-${s.delete}</dd></div>
+            <div class="stat mod"><dt style="font-size:.82rem;">Modified</dt><dd style="font-size:1.1rem;font-weight:700;color:var(--yellow);">~${s.replace}</dd></div>
+        </dl>
     `;
 
     renderSideBySide(data);
@@ -529,10 +537,10 @@ function renderSideBySide(data) {
             const rClass = !hasRight ? "empty" : (block.tag === "equal" ? "equal" : block.tag === "insert" ? "insert" : "replace");
 
             let lMarker = "", rMarker = "";
-            if (block.tag === "delete" && hasLeft) lMarker = '<span class="diff-marker del" aria-hidden="true">-</span>';
-            if (block.tag === "insert" && hasRight) rMarker = '<span class="diff-marker add" aria-hidden="true">+</span>';
-            if (block.tag === "replace" && hasLeft) lMarker = '<span class="diff-marker mod" aria-hidden="true">~</span>';
-            if (block.tag === "replace" && hasRight) rMarker = '<span class="diff-marker mod" aria-hidden="true">~</span>';
+            if (block.tag === "delete" && hasLeft) lMarker = '<span class="diff-marker del" role="img" aria-label="deleted">-</span>';
+            if (block.tag === "insert" && hasRight) rMarker = '<span class="diff-marker add" role="img" aria-label="added">+</span>';
+            if (block.tag === "replace" && hasLeft) lMarker = '<span class="diff-marker mod" role="img" aria-label="modified">~</span>';
+            if (block.tag === "replace" && hasRight) rMarker = '<span class="diff-marker mod" role="img" aria-label="modified">~</span>';
 
             // Word-level highlighting for replace blocks
             let lContent = hasLeft ? esc(block.left_lines[i]) : "";
@@ -654,23 +662,13 @@ function getHistory() {
 
 function saveToHistory(data) {
     const history = getHistory();
-    // Strip word_diffs from blocks to reduce localStorage size
-    const lightBlocks = data.diff_blocks.map(b => {
-        const { word_diffs, ...rest } = b;
-        return rest;
-    });
     const entry = {
         id: Date.now(),
         date: new Date().toISOString(),
         name_a: data.name_a,
         name_b: data.name_b,
         stats: data.stats,
-        unified_diff: data.unified_diff,
         report: data.report,
-        diff_blocks: lightBlocks,
-        metadata_a: data.metadata_a,
-        metadata_b: data.metadata_b,
-        metadata_diff: data.metadata_diff,
     };
     history.unshift(entry);
     if (history.length > MAX_HISTORY) history.length = MAX_HISTORY;
@@ -693,6 +691,7 @@ function renderHistory() {
     list.querySelectorAll("li[data-id]").forEach(li => {
         function handleActivate(ev) {
             if (ev.target.classList.contains("hist-del")) {
+                ev.stopPropagation();
                 deleteHistoryEntry(parseInt(ev.target.dataset.del));
                 return;
             }
@@ -714,21 +713,49 @@ function deleteHistoryEntry(id) {
 }
 
 function loadFromHistory(entry) {
-    compareResult = entry;
+    compareResult = null;
     aiReportText = null;
-    renderResults(entry);
     resultsEl.style.display = "block";
-    btnDiff.disabled = false;
-    btnReport.disabled = false;
+    btnDiff.disabled = true;
+    btnReport.disabled = !entry.report;
     btnAiReport.disabled = true;
-    // Can't render PDF preview from history (no binary data), show message
-    document.getElementById("tab-pdf-preview").innerHTML = '<div style="color:var(--muted);padding:2rem 0;">PDF preview is not available for history entries. Re-upload the files and compare again to view PDF pages.</div>';
+
+    const s = entry.stats;
+    document.getElementById("stats-bar").innerHTML = `
+        <dl class="stats" style="display:flex;gap:1.25rem;flex-wrap:wrap;margin:0;">
+            <div class="stat"><dt style="font-size:.82rem;">Unchanged</dt><dd style="font-size:1.1rem;font-weight:700;">${s.equal}</dd></div>
+            <div class="stat ins"><dt style="font-size:.82rem;">Inserted</dt><dd style="font-size:1.1rem;font-weight:700;color:var(--green);">+${s.insert}</dd></div>
+            <div class="stat del"><dt style="font-size:.82rem;">Deleted</dt><dd style="font-size:1.1rem;font-weight:700;color:var(--red);">-${s.delete}</dd></div>
+            <div class="stat mod"><dt style="font-size:.82rem;">Modified</dt><dd style="font-size:1.1rem;font-weight:700;color:var(--yellow);">~${s.replace}</dd></div>
+        </dl>
+    `;
+    document.getElementById("tab-side-by-side").innerHTML = '<div style="color:var(--muted);padding:2rem 0;">Side-by-side diff is not available for history entries. Re-upload the files to view full results.</div>';
+    document.getElementById("tab-unified").innerHTML = '<div style="color:var(--muted);padding:2rem 0;">Unified diff is not available for history entries.</div>';
+    document.getElementById("tab-pdf-preview").innerHTML = '<div style="color:var(--muted);padding:2rem 0;">PDF preview is not available for history entries.</div>';
+    document.getElementById("tab-metadata").innerHTML = '<div style="color:var(--muted);padding:2rem 0;">Metadata is not available for history entries.</div>';
+    document.getElementById("tab-report").innerHTML = entry.report ? `<div class="report">${renderMarkdown(entry.report)}</div>` : '<div style="color:var(--muted);padding:2rem 0;">No report available.</div>';
+    document.getElementById("tab-ai-report").innerHTML = '<div style="color:var(--muted);padding:2rem 0;">AI report is not available for history entries.</div>';
+
+    // Allow exporting the report from history
+    compareResult = entry;
 }
 
 // Load history on startup
 renderHistory();
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+function showError(msg) {
+    const banner = document.getElementById("error-banner");
+    banner.textContent = msg;
+    banner.style.display = "block";
+    banner.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+function clearError() {
+    const banner = document.getElementById("error-banner");
+    banner.textContent = "";
+    banner.style.display = "none";
+}
 
 /**
  * HTML-escape a string to prevent XSS when inserting user-supplied text.

@@ -11,9 +11,17 @@ import io
 import re
 import difflib
 import logging
+import threading
+import ipaddress
+import time
+import json
+import urllib.error
 from datetime import datetime
+from collections import defaultdict
+from functools import wraps
 
 from flask import Flask, request, jsonify, send_from_directory
+from werkzeug.utils import secure_filename
 import pdfplumber
 
 import config
@@ -27,6 +35,44 @@ app = Flask(__name__, static_folder="static")
 app.config["MAX_CONTENT_LENGTH"] = config.MAX_UPLOAD_MB * 1024 * 1024
 
 logger = logging.getLogger(__name__)
+
+def _check_origin():
+    """Lightweight CSRF check: verify Origin or Referer on POST requests."""
+    origin = request.headers.get("Origin") or ""
+    referer = request.headers.get("Referer") or ""
+    if not origin and not referer:
+        return  # Allow requests without Origin/Referer (e.g., curl, Postman)
+    host = request.host  # includes port
+    if origin:
+        from urllib.parse import urlparse
+        parsed = urlparse(origin)
+        origin_host = parsed.netloc
+        if origin_host != host:
+            return jsonify({"error": "Origin mismatch."}), 403
+    elif referer:
+        from urllib.parse import urlparse
+        parsed = urlparse(referer)
+        ref_host = parsed.netloc
+        if ref_host != host:
+            return jsonify({"error": "Referer mismatch."}), 403
+    return None
+
+_rate_limits = defaultdict(list)
+
+def rate_limit(max_requests, window_seconds):
+    """Simple in-memory rate limiter decorator."""
+    def decorator(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            key = f.__name__ + ":" + (request.remote_addr or "unknown")
+            now = time.time()
+            _rate_limits[key] = [t for t in _rate_limits[key] if now - t < window_seconds]
+            if len(_rate_limits[key]) >= max_requests:
+                return jsonify({"error": "Rate limit exceeded. Please wait and try again."}), 429
+            _rate_limits[key].append(now)
+            return f(*args, **kwargs)
+        return wrapper
+    return decorator
 
 # Sentinel character sequence injected between pages during text extraction.
 # It is stripped before any user-facing output but allows internal functions
@@ -131,9 +177,22 @@ def apply_ignore_rules(lines: list[str], ignore_options: dict) -> list[str]:
                 # Reject very long patterns to mitigate ReDoS risk
                 if len(pattern) > 500:
                     pass
-                elif re.fullmatch(pattern, line, flags=0):
-                    continue
-            except (re.error, TimeoutError):
+                else:
+                    # Use a thread-based timeout to guard against catastrophic backtracking
+                    match_result = [None]
+                    def _do_match():
+                        try:
+                            match_result[0] = re.fullmatch(pattern, line, flags=0)
+                        except re.error:
+                            pass
+                    t = threading.Thread(target=_do_match)
+                    t.start()
+                    t.join(timeout=2)
+                    if t.is_alive():
+                        pass  # timed out — skip filtering for this line
+                    elif match_result[0]:
+                        continue
+            except (re.error, Exception):
                 pass  # invalid regex — skip filtering for this line
 
         if ignore_options.get("ignore_headers_footers"):
@@ -473,11 +532,11 @@ def generate_report(diff_blocks, stats, name_a, name_b):
 # ---------------------------------------------------------------------------
 
 def _safe_filename(file_storage) -> str:
-    """Return a safe display name for an uploaded file.
-
-    Falls back to 'unnamed.pdf' if the browser did not send a filename.
-    """
+    """Return a safe display name for an uploaded file."""
     name = file_storage.filename
+    if not name:
+        return "unnamed.pdf"
+    name = secure_filename(name)
     if not name:
         return "unnamed.pdf"
     return name
@@ -509,6 +568,7 @@ def get_config():
 
 
 @app.route("/api/compare", methods=["POST"])
+@rate_limit(10, 60)
 def compare():
     """Main comparison endpoint.
 
@@ -522,6 +582,10 @@ def compare():
     Returns JSON with diff_blocks, stats, unified_diff, report,
     metadata_a/b, and metadata_diff.
     """
+    csrf_err = _check_origin()
+    if csrf_err:
+        return csrf_err
+
     if "pdf_a" not in request.files or "pdf_b" not in request.files:
         return jsonify({"error": "Two PDF files are required (pdf_a and pdf_b)."}), 400
 
@@ -537,6 +601,14 @@ def compare():
     bytes_a = pdf_a.read()
     bytes_b = pdf_b.read()
 
+    # Validate PDF magic bytes before handing to pdfplumber
+    if not bytes_a[:5] == b'%PDF-' or not bytes_b[:5] == b'%PDF-':
+        return jsonify({"error": "One or both files are not valid PDF documents."}), 400
+
+    max_file_bytes = config.MAX_UPLOAD_MB * 1024 * 1024
+    if len(bytes_a) > max_file_bytes or len(bytes_b) > max_file_bytes:
+        return jsonify({"error": f"Each file must be under {config.MAX_UPLOAD_MB} MB."}), 400
+
     # Parse ignore options from form data
     ignore_options = {
         "ignore_whitespace": request.form.get("ignore_whitespace") == "true",
@@ -549,9 +621,13 @@ def compare():
         # Single-pass extraction: text + metadata from one pdfplumber.open()
         lines_a, meta_a = extract_text_and_metadata(bytes_a)
         lines_b, meta_b = extract_text_and_metadata(bytes_b)
-    except Exception:
+    except (ValueError, IOError, OSError):
         logger.exception("PDF text extraction failed")
         return jsonify({"error": "Failed to extract text from one or both PDFs."}), 422
+
+    MAX_LINES = 50_000
+    if len(lines_a) > MAX_LINES or len(lines_b) > MAX_LINES:
+        return jsonify({"error": f"Documents exceed {MAX_LINES} lines. Please use smaller files."}), 400
 
     # Apply user-selected ignore rules before diffing
     filtered_a = apply_ignore_rules(lines_a, ignore_options)
@@ -576,6 +652,7 @@ def compare():
 
 
 @app.route("/api/llm-report", methods=["POST"])
+@rate_limit(5, 60)
 def llm_report():
     """Generate an LLM-powered analysis report from a previous comparison.
 
@@ -584,6 +661,10 @@ def llm_report():
 
     Server-side .env defaults are used as a base; request fields override them.
     """
+    csrf_err = _check_origin()
+    if csrf_err:
+        return csrf_err
+
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "JSON body required."}), 400
@@ -618,7 +699,7 @@ def llm_report():
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    except Exception:
+    except (urllib.error.URLError, IOError, OSError, KeyError, json.JSONDecodeError):
         logger.exception("LLM report generation failed")
         return jsonify({"error": "LLM request failed. Check provider settings and try again."}), 502
 
