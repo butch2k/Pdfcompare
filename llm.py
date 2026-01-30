@@ -95,6 +95,8 @@ def _extract_response(data, *keys):
             current = current[key]
         else:
             raise ValueError("Unexpected LLM response format")
+    if not isinstance(current, str):
+        raise ValueError("Unexpected LLM response format")
     return current
 
 

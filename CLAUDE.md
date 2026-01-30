@@ -60,3 +60,7 @@ No test suite exists. Testing is manual via browser at http://localhost:5000.
 ## Configuration
 
 Environment variables (see `.env.example`): `FLASK_PORT`, `FLASK_DEBUG`, `MAX_UPLOAD_MB`, `LLM_PROVIDER`, `LLM_MODEL`, `LLM_API_KEY`, `LLM_ENDPOINT`. The frontend can override LLM settings per-session.
+
+## Tool Usage
+
+Always use Context7 MCP when needing library/API documentation, code generation, setup or configuration steps without the user having to explicitly ask.

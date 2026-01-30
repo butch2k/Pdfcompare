@@ -12,7 +12,6 @@ import re
 import difflib
 import logging
 import threading
-import ipaddress
 import time
 import json
 import urllib.error
@@ -38,19 +37,18 @@ logger = logging.getLogger(__name__)
 
 def _check_origin():
     """Lightweight CSRF check: verify Origin or Referer on POST requests."""
+    from urllib.parse import urlparse
     origin = request.headers.get("Origin") or ""
     referer = request.headers.get("Referer") or ""
     if not origin and not referer:
         return  # Allow requests without Origin/Referer (e.g., curl, Postman)
     host = request.host  # includes port
     if origin:
-        from urllib.parse import urlparse
         parsed = urlparse(origin)
         origin_host = parsed.netloc
         if origin_host != host:
             return jsonify({"error": "Origin mismatch."}), 403
     elif referer:
-        from urllib.parse import urlparse
         parsed = urlparse(referer)
         ref_host = parsed.netloc
         if ref_host != host:
@@ -66,12 +64,12 @@ def rate_limit(max_requests, window_seconds):
         def wrapper(*args, **kwargs):
             key = f.__name__ + ":" + (request.remote_addr or "unknown")
             now = time.time()
-            _rate_limits[key] = [t for t in _rate_limits[key] if now - t < window_seconds]
-            if not _rate_limits[key]:
-                del _rate_limits[key]
-            if len(_rate_limits[key]) >= max_requests:
+            timestamps = [t for t in _rate_limits[key] if now - t < window_seconds]
+            if len(timestamps) >= max_requests:
+                _rate_limits[key] = timestamps
                 return jsonify({"error": "Rate limit exceeded. Please wait and try again."}), 429
-            _rate_limits[key].append(now)
+            timestamps.append(now)
+            _rate_limits[key] = timestamps
             return f(*args, **kwargs)
         return wrapper
     return decorator
