@@ -1023,6 +1023,7 @@ function renderMarkdown(md) {
     // Strip outer markdown code fence if LLM wrapped the response in one
     md = md.replace(/^```(?:markdown)?\s*\n?/i, "").replace(/\n?```\s*$/, "");
     let html = esc(md);
+    html = html.replace(/^#### (.+)$/gm, "<h4>$1</h4>");
     html = html.replace(/^### (.+)$/gm, "<h3>$1</h3>");
     html = html.replace(/^## (.+)$/gm, "<h2>$1</h2>");
     html = html.replace(/^# (.+)$/gm, "<h1>$1</h1>");
@@ -1100,6 +1101,7 @@ btnAiPdf.addEventListener("click", () => {
             h1 { font-size: 16pt; margin: 16px 0 6px; border-bottom: 2px solid #333; padding-bottom: 3px; }
             h2 { font-size: 13pt; margin: 14px 0 5px; border-bottom: 1px solid #999; padding-bottom: 2px; }
             h3 { font-size: 12pt; margin: 10px 0 4px; }
+            h4 { font-size: 11pt; margin: 8px 0 3px; font-weight: 700; }
             strong { font-weight: 700; }
             em { font-style: italic; color: #222 !important; }
             hr { border: none; border-top: 1px solid #ccc; margin: 10px 0; }
@@ -1119,7 +1121,7 @@ btnAiPdf.addEventListener("click", () => {
         image: { type: "jpeg", quality: 0.98 },
         html2canvas: { scale: 1, useCORS: true, scrollY: 0, backgroundColor: "#ffffff" },
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        pagebreak: { mode: ["avoid-all", "css", "legacy"], avoid: [".text-block", "li", "h1", "h2", "h3", "tr", "ul", "ol"] }
+        pagebreak: { mode: ["avoid-all", "css", "legacy"], avoid: [".text-block", "li", "h1", "h2", "h3", "h4", "tr", "ul", "ol"] }
     };
 
     html2pdf().set(opt).from(htmlString, "string").toPdf().get("pdf").then(function(pdf) {
