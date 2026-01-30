@@ -694,12 +694,16 @@ def llm_report():
         return jsonify({"error": "No LLM provider specified."}), 400
 
     # Merge: .env defaults ← request overrides
+    # Only apply .env model/endpoint if the provider matches .env provider,
+    # otherwise a provider-specific default (e.g. localhost for Ollama)
+    # would leak into a different provider (e.g. OpenAI).
     llm_config: dict = {}
-    if config.LLM_MODEL:
+    env_provider_matches = provider == config.LLM_PROVIDER
+    if config.LLM_MODEL and env_provider_matches:
         llm_config["model"] = config.LLM_MODEL
     if config.LLM_API_KEY:
         llm_config["api_key"] = config.LLM_API_KEY
-    if config.LLM_ENDPOINT:
+    if config.LLM_ENDPOINT and env_provider_matches:
         llm_config["endpoint"] = config.LLM_ENDPOINT
     llm_config.update(data.get("config", {}))
 
