@@ -90,21 +90,34 @@ def _check_origin():
             return jsonify({"error": "Referer mismatch."}), 403
     return None
 
-_rate_limits = defaultdict(list)
+_rate_limits = {}
 
 def rate_limit(max_requests, window_seconds):
-    """Simple in-memory rate limiter decorator."""
+    """In-memory rate limiter with periodic cleanup."""
     def decorator(f):
         @wraps(f)
         def wrapper(*args, **kwargs):
-            key = f.__name__ + ":" + (request.remote_addr or "unknown")
+            key = f"{f.__name__}:{request.remote_addr or 'unknown'}"
             now = time.time()
-            timestamps = [t for t in _rate_limits[key] if now - t < window_seconds]
+            
+            # Prune old timestamps for this key
+            timestamps = [t for t in _rate_limits.get(key, []) if now - t < window_seconds]
+            
             if len(timestamps) >= max_requests:
                 _rate_limits[key] = timestamps
                 return jsonify({"error": "Rate limit exceeded. Please wait and try again."}), 429
+            
             timestamps.append(now)
             _rate_limits[key] = timestamps
+
+            # Periodic global cleanup (1 in 100 requests) to prevent key-leak
+            if threading.active_count() > 0 and time.time() % 100 < 1:
+                 expired = now - window_seconds
+                 for k in list(_rate_limits.keys()):
+                     _rate_limits[k] = [t for t in _rate_limits[k] if t > expired]
+                     if not _rate_limits[k]:
+                         del _rate_limits[k]
+
             return f(*args, **kwargs)
         return wrapper
     return decorator

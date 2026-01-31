@@ -228,10 +228,9 @@ def _validate_endpoint(url: str, *, allow_local: bool = False) -> None:
 
     for family, _, _, _, sockaddr in infos:
         ip = ipaddress.ip_address(sockaddr[0])
-        if ip.is_reserved or ip.is_link_local:
-            raise ValueError("This endpoint address is not allowed")
-        if not allow_local and (ip.is_private or ip.is_loopback):
-            raise ValueError("This endpoint address is not allowed")
+        if not allow_local:
+            if ip.is_reserved or ip.is_link_local or ip.is_private or ip.is_loopback:
+                raise ValueError("This endpoint address is not allowed")
 
 
 # ---------------------------------------------------------------------------
